@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getOpenAIClient } from '@/lib/ai/client'
+import { getLLMClient, SUMMARY_MODEL, getProvider } from '@/lib/ai/client'
 import { requireEmbedApiAuth, getTenantFromRequest } from '@/lib/security/embed-auth'
 import { sendCallSummaryEmail } from '@/lib/email/call-summary'
 import { db } from '@/lib/db/client'
-import { seedShops } from '@/lib/db/seed-shops'
 import { initVectorTable, upsertReviewVector } from '@/lib/db/vectors'
 import { embedReview } from '@/lib/ai/embed'
 import type { CallSummary, ChatHistory, LeadData, ReviewData } from '@/types'
@@ -38,8 +37,9 @@ export async function POST(req: NextRequest) {
       keyPoints: [],
       ...(review ? { review } : {}),
     }
+    const briefShopCode = req.headers.get('x-embed-shop') ?? ''
     const email = await sendCallSummaryEmail({ tenant, lead, summary: briefSummary, messages })
-    await persistReview({ tenant, lead, review, summary: briefSummary, messages })
+    await persistReview({ tenant, lead, review, summary: briefSummary, messages, shopCode: briefShopCode })
     return NextResponse.json({ ...briefSummary, email })
   }
 
@@ -62,11 +62,23 @@ Return only valid JSON: { "summary": "...", "keyPoints": ["...", "..."] }`
 
 Return only valid JSON: { "summary": "...", "keyPoints": ["...", "..."] }`
 
-  const openai = getOpenAIClient(tenant.openaiApiKey)
+  const openai   = getLLMClient(tenant.openaiApiKey)
+  const provider = getProvider()
+
+  // Fallback used when LLM summarization fails — still saves the raw review data
+  const fallbackSummary: CallSummary = {
+    summary:   review?.subcategory
+      ? `Customer ${review.sentiment ?? 'feedback'}: ${review.subcategory}.`
+      : 'Call summary unavailable.',
+    keyPoints: [],
+    ...(review ? { review } : {}),
+  }
+
+  let summary = fallbackSummary
 
   try {
     const completion = await openai.chat.completions.create({
-      model:           'gpt-4o-mini',
+      model:           SUMMARY_MODEL[provider],
       max_tokens:      500,
       temperature:     0.3,
       response_format: { type: 'json_object' },
@@ -79,22 +91,24 @@ Return only valid JSON: { "summary": "...", "keyPoints": ["...", "..."] }`
     const raw    = completion.choices[0].message.content ?? '{}'
     const parsed = JSON.parse(raw)
 
-    const summary: CallSummary = {
-      summary:   parsed.summary   ?? '',
+    summary = {
+      summary:   parsed.summary   ?? fallbackSummary.summary,
       keyPoints: parsed.keyPoints ?? [],
       ...(review ? { review } : {}),
     }
-
-    const [email] = await Promise.all([
-      sendCallSummaryEmail({ tenant, lead, summary, messages }),
-      persistReview({ tenant, lead, review, summary, messages }),
-    ])
-
-    return NextResponse.json({ ...summary, email })
   } catch (err) {
-    console.error('[summarize]', err)
-    return NextResponse.json({ error: 'Summarization failed' }, { status: 500 })
+    console.error('[summarize] LLM failed — saving with fallback summary:', err)
   }
+
+  const shopCode = req.headers.get('x-embed-shop') ?? ''
+
+  // Always persist and email regardless of whether LLM succeeded
+  const [email] = await Promise.all([
+    sendCallSummaryEmail({ tenant, lead, summary, messages }),
+    persistReview({ tenant, lead, review, summary, messages, shopCode }),
+  ])
+
+  return NextResponse.json({ ...summary, email })
 }
 
 // ── Persist to SQLite + embed vector ──────────────────────────────────────────
@@ -105,21 +119,28 @@ async function persistReview({
   review,
   summary,
   messages,
+  shopCode,
 }: {
-  tenant:   ReturnType<typeof getTenantFromRequest>
-  lead:     LeadData
-  review:   ReviewData | null
-  summary:  CallSummary
-  messages: ChatHistory
+  tenant:    ReturnType<typeof getTenantFromRequest>
+  lead:      LeadData
+  review:    ReviewData | null
+  summary:   CallSummary
+  messages:  ChatHistory
+  shopCode:  string
 }) {
   try {
     if (tenant.agentType !== 'reviews' && tenant.agentType !== 'complaints') return
 
-    await seedShops()
     initVectorTable()
 
-    const shop = await db.shop.findUnique({ where: { tenantId: tenant.id } })
-    if (!shop) return
+    const shop = shopCode
+      ? await db.shop.findFirst({ where: { branchCode: shopCode } })
+      : null
+
+    if (!shop) {
+      console.warn('[persist-review] No valid shop for branchCode:', shopCode || '(none)')
+      return
+    }
 
     // Save structured review row
     const created = await db.review.create({
@@ -136,7 +157,7 @@ async function persistReview({
       },
     })
 
-    // Save optional contact info
+    // Save optional contact info — auto-fill company from shop
     if (lead.name || lead.email || lead.phone) {
       await db.lead.create({
         data: {

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { streamChatReply, extractSentences } from '@/lib/ai/chat'
 import { requireEmbedApiAuth, getTenantFromRequest } from '@/lib/security/embed-auth'
+import { db } from '@/lib/db/client'
 import type { ChatMessage } from '@/lib/ai/chat'
 export { OPTIONS } from '@/lib/utils/cors'
 
@@ -21,7 +22,11 @@ export async function POST(req: NextRequest) {
   const authError = requireEmbedApiAuth(req)
   if (authError) return authError
 
-  const tenant = getTenantFromRequest(req)
+  const tenant   = getTenantFromRequest(req)
+  const shopCode = req.headers.get('x-embed-shop') ?? ''
+  const shop     = shopCode
+    ? await db.shop.findFirst({ where: { branchCode: shopCode } })
+    : null
 
   let messages: ChatMessage[]
   try {
@@ -38,10 +43,15 @@ export async function POST(req: NextRequest) {
     return encoder.encode(`data: ${JSON.stringify(payload)}\n\n`)
   }
 
-  // Strip both hidden tokens from visible text
-  const TOKEN_RE = /\[(LEAD|REVIEW):([\s\S]*?)\]/g
+  // Strip hidden tokens + any truncated token debris (e.g. dangling "}]" from cut-off tokens)
+  const TOKEN_RE   = /\[(LEAD|REVIEW|END_CALL):([\s\S]*?)\]/g
   function stripTokens(text: string): string {
-    return text.replace(TOKEN_RE, '').replace(/\s{2,}/g, ' ').trim()
+    return text
+      .replace(TOKEN_RE, '')
+      .replace(/\[END_CALL\]/g, '')
+      .replace(/\s*\}?\]?\s*$/, '')    // remove trailing debris from truncated tokens
+      .replace(/\s{2,}/g, ' ')
+      .trim()
   }
   function extractToken<T>(text: string, name: string): T | null {
     const re = new RegExp(`\\[${name}:([\\s\\S]*?)\\]`)
@@ -53,7 +63,7 @@ export async function POST(req: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        const completion = await streamChatReply(messages, tenant)
+        const completion = await streamChatReply(messages, tenant, shop ?? undefined)
 
         let accumulated    = ''
         let sentenceBuffer = ''
@@ -81,9 +91,9 @@ export async function POST(req: NextRequest) {
 
             const lead     = extractToken<Record<string, string | null>>(accumulated, 'LEAD')
             const review   = extractToken<Record<string, unknown>>(accumulated, 'REVIEW')
+            const endCall  = accumulated.includes('[END_CALL]')
             const cleaned  = stripTokens(accumulated)
-            const endCall  = cleaned.trimStart().startsWith('[END_CALL]')
-            const fullText = cleaned.replace('[END_CALL]', '').trim()
+            const fullText = cleaned
 
             if (lead)   controller.enqueue(send({ lead }))
             if (review) controller.enqueue(send({ review }))
@@ -93,7 +103,10 @@ export async function POST(req: NextRequest) {
         }
       } catch (err) {
         console.error('[chat]', err)
-        controller.enqueue(send({ error: 'Chat failed' }))
+        const msg = String(err).includes('429')
+          ? 'OpenAI quota exceeded — please add credits at platform.openai.com'
+          : 'Chat failed — please try again'
+        controller.enqueue(send({ error: msg }))
         controller.close()
       }
     },

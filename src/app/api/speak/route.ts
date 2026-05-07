@@ -44,6 +44,10 @@ export async function POST(req: NextRequest) {
     })
   } catch (err) {
     console.error('[speak]', err)
-    return NextResponse.json({ error: 'TTS failed' }, { status: 500 })
+    const isQuota = String(err).includes('429')
+    return NextResponse.json(
+      { error: isQuota ? 'TTS quota exceeded' : 'TTS failed' },
+      { status: isQuota ? 503 : 500 }
+    )
   }
 }

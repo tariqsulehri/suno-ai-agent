@@ -10,19 +10,22 @@ import type { DashboardData } from '@/lib/db/dashboard-query'
 
 // ── Emoji maps ─────────────────────────────────────────────────────────────────
 const SENTIMENT_EMOJI: Record<string, string> = {
-  positive:  '✅',
-  negative:  '⚠️',
-  complaint: '🚨',
+  positive:   '✅',
+  negative:   '⚠️',
+  complaint:  '🚨',
+  suggestion: '💡',
 }
 const SENTIMENT_LABEL: Record<string, string> = {
-  positive:  'Positive',
-  negative:  'Negative',
-  complaint: 'Complaint',
+  positive:   'Positive',
+  negative:   'Negative',
+  complaint:  'Complaint',
+  suggestion: 'Suggestion',
 }
 const SENTIMENT_COLOR: Record<string, string> = {
-  positive:  '#22c55e',
-  negative:  '#f97316',
-  complaint: '#ef4444',
+  positive:   '#22c55e',
+  negative:   '#f97316',
+  complaint:  '#ef4444',
+  suggestion: '#6366f1',
 }
 const CATEGORY_EMOJI: Record<string, string> = {
   product:   '🍽️',
@@ -36,8 +39,9 @@ const RATING_EMOJI: Record<number, string> = {
   5: '🌟', 4: '✨', 3: '😐', 2: '😞', 1: '😡',
 }
 const PRIORITY_EMOJI: Record<string, string> = {
-  complaint: '🔴',
-  negative:  '🟡',
+  complaint:  '🔴',
+  negative:   '🟡',
+  suggestion: '💡',
 }
 
 // ── Search types ───────────────────────────────────────────────────────────────
@@ -50,7 +54,7 @@ interface SearchSource {
 interface SearchResult { answer: string; sources: SearchSource[] }
 
 // ── Palette ────────────────────────────────────────────────────────────────────
-const PIE_COLORS = ['#22c55e', '#f97316', '#ef4444']
+const PIE_COLORS = ['#22c55e', '#f97316', '#ef4444', '#6366f1']
 
 // ── Shared UI primitives ───────────────────────────────────────────────────────
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
@@ -102,26 +106,29 @@ function SentimentRow({ sentiment, count, total }: { sentiment: string; count: n
 // ── Category Row ───────────────────────────────────────────────────────────────
 function CategoryRow({ name, data, maxTotal }: {
   name: string
-  data: { positive: number; negative: number; complaint: number; total: number }
+  data: { positive: number; negative: number; complaint: number; suggestion: number; total: number }
   maxTotal: number
 }) {
-  const pctPos  = maxTotal ? (data.positive  / maxTotal) * 100 : 0
-  const pctNeg  = maxTotal ? (data.negative  / maxTotal) * 100 : 0
-  const pctComp = maxTotal ? (data.complaint / maxTotal) * 100 : 0
+  const pctPos  = maxTotal ? (data.positive   / maxTotal) * 100 : 0
+  const pctNeg  = maxTotal ? (data.negative   / maxTotal) * 100 : 0
+  const pctComp = maxTotal ? (data.complaint  / maxTotal) * 100 : 0
+  const pctSugg = maxTotal ? (data.suggestion / maxTotal) * 100 : 0
 
   return (
     <div className="flex items-center gap-3 py-2 border-b border-[#1e2535] last:border-0">
       <span className="text-lg w-6">{CATEGORY_EMOJI[name] ?? '📌'}</span>
       <span className="text-sm text-slate-300 w-24 capitalize">{name}</span>
       <div className="flex-1 flex gap-0.5 h-5 rounded-lg overflow-hidden bg-[#131720]">
-        {data.positive  > 0 && <div style={{ width: `${pctPos}%`,  background: '#22c55e' }} title={`✅ ${data.positive}`} />}
-        {data.negative  > 0 && <div style={{ width: `${pctNeg}%`,  background: '#f97316' }} title={`⚠️ ${data.negative}`} />}
-        {data.complaint > 0 && <div style={{ width: `${pctComp}%`, background: '#ef4444' }} title={`🚨 ${data.complaint}`} />}
+        {data.positive   > 0 && <div style={{ width: `${pctPos}%`,  background: '#22c55e' }} title={`✅ ${data.positive}`} />}
+        {data.negative   > 0 && <div style={{ width: `${pctNeg}%`,  background: '#f97316' }} title={`⚠️ ${data.negative}`} />}
+        {data.complaint  > 0 && <div style={{ width: `${pctComp}%`, background: '#ef4444' }} title={`🚨 ${data.complaint}`} />}
+        {data.suggestion > 0 && <div style={{ width: `${pctSugg}%`, background: '#6366f1' }} title={`💡 ${data.suggestion}`} />}
       </div>
-      <div className="flex gap-3 text-xs">
+      <div className="flex gap-2 text-xs flex-wrap">
         <span className="text-[#22c55e]">✅ {data.positive}</span>
         <span className="text-[#f97316]">⚠️ {data.negative}</span>
         <span className="text-[#ef4444]">🚨 {data.complaint}</span>
+        {data.suggestion > 0 && <span className="text-[#6366f1]">💡 {data.suggestion}</span>}
       </div>
     </div>
   )
@@ -180,9 +187,10 @@ function ShopCard({ shop, rank }: {
       {/* Sentiment split */}
       <div className="flex gap-2 mb-4">
         {[
-          { emoji: '✅', label: 'Positive',  count: shop.positive,  color: '#22c55e' },
-          { emoji: '⚠️', label: 'Negative',  count: shop.negative,  color: '#f97316' },
-          { emoji: '🚨', label: 'Complaint', count: shop.complaint, color: '#ef4444' },
+          { emoji: '✅', label: 'Positive',   count: shop.positive,   color: '#22c55e' },
+          { emoji: '⚠️', label: 'Negative',   count: shop.negative,   color: '#f97316' },
+          { emoji: '🚨', label: 'Complaint',  count: shop.complaint,  color: '#ef4444' },
+          { emoji: '💡', label: 'Suggestion', count: shop.suggestion, color: '#6366f1' },
         ].map((s) => (
           <div key={s.label} className="flex-1 bg-[#1a1f2e] rounded-xl p-2 text-center">
             <div className="text-base">{s.emoji}</div>
@@ -387,17 +395,19 @@ function EmptyState() {
 export function DashboardClient({ data }: { data: DashboardData | null }) {
   if (!data) return <EmptyState />
 
-  const { totalReviews, avgRating, bysentiment, categorySentiment, trend, ratingDist, topIssues, recentReviews, shops } = data
+  const { totalReviews, avgRating, bysentiment, categorySentiment, trend, ratingDist, topIssues, topSuggestions, recentReviews, shops } = data
 
-  const positive  = bysentiment['positive']  ?? 0
-  const negative  = bysentiment['negative']  ?? 0
-  const complaint = bysentiment['complaint'] ?? 0
+  const positive   = bysentiment['positive']   ?? 0
+  const negative   = bysentiment['negative']   ?? 0
+  const complaint  = bysentiment['complaint']  ?? 0
+  const suggestion = bysentiment['suggestion'] ?? 0
   const satisfaction = avgRating ? Math.round((avgRating / 5) * 100) : null
 
   const sentimentPie = [
-    { name: '✅ Positive',  value: positive,  color: '#22c55e' },
-    { name: '⚠️ Negative',  value: negative,  color: '#f97316' },
-    { name: '🚨 Complaint', value: complaint, color: '#ef4444' },
+    { name: '✅ Positive',   value: positive,   color: '#22c55e' },
+    { name: '⚠️ Negative',   value: negative,   color: '#f97316' },
+    { name: '🚨 Complaint',  value: complaint,  color: '#ef4444' },
+    { name: '💡 Suggestion', value: suggestion, color: '#6366f1' },
   ].filter((s) => s.value > 0)
 
   const trendData    = trend.map((t) => ({ month: t.month.slice(5), count: Number(t.count) }))
@@ -430,19 +440,22 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
 
       {/* ── Executive KPIs ────────────────────────────────────────────────── */}
       <SectionTitle>Executive Summary</SectionTitle>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
-        <KpiCard emoji="📊" label="Total Reviews"  value={totalReviews} color="#6c8ef7" highlight />
-        <KpiCard emoji="✅" label="Positive"        value={positive}
-          sub={`${totalReviews ? Math.round(positive / totalReviews * 100) : 0}% of total`}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-8">
+        <KpiCard emoji="📊" label="Total"       value={totalReviews} color="#6c8ef7" highlight />
+        <KpiCard emoji="✅" label="Positive"     value={positive}
+          sub={`${totalReviews ? Math.round(positive / totalReviews * 100) : 0}%`}
           color="#22c55e" />
-        <KpiCard emoji="⚠️" label="Negative"        value={negative}
-          sub={`${totalReviews ? Math.round(negative / totalReviews * 100) : 0}% of total`}
+        <KpiCard emoji="⚠️" label="Negative"    value={negative}
+          sub={`${totalReviews ? Math.round(negative / totalReviews * 100) : 0}%`}
           color="#f97316" />
-        <KpiCard emoji="🚨" label="Complaints"      value={complaint}
-          sub={`${totalReviews ? Math.round(complaint / totalReviews * 100) : 0}% of total`}
+        <KpiCard emoji="🚨" label="Complaints"  value={complaint}
+          sub={`${totalReviews ? Math.round(complaint / totalReviews * 100) : 0}%`}
           color="#ef4444" />
+        <KpiCard emoji="💡" label="Suggestions" value={suggestion}
+          sub={`${totalReviews ? Math.round(suggestion / totalReviews * 100) : 0}%`}
+          color="#6366f1" />
         <KpiCard emoji="⭐" label="Avg Rating"
-          value={avgRating !== null ? `${avgRating} / 5` : '—'}
+          value={avgRating !== null ? `${avgRating}/5` : '—'}
           color="#eab308" />
         <KpiCard emoji={satisfactionEmoji} label="Satisfaction"
           value={satisfaction !== null ? `${satisfaction}%` : '—'}
@@ -469,7 +482,7 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
               </PieChart>
             </ResponsiveContainer>
             <div className="flex-1">
-              {['positive', 'negative', 'complaint'].map((s) => (
+              {['positive', 'negative', 'complaint', 'suggestion'].map((s) => (
                 <SentimentRow key={s} sentiment={s} count={bysentiment[s] ?? 0} total={totalReviews} />
               ))}
             </div>
@@ -486,10 +499,11 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
                 <CategoryRow key={cat} name={cat} data={d} maxTotal={maxCatTotal} />
               ))}
           </div>
-          <div className="flex gap-4 mt-3 text-xs text-slate-500">
+          <div className="flex gap-3 mt-3 text-xs text-slate-500 flex-wrap">
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-[#22c55e] inline-block"/>Positive</span>
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-[#f97316] inline-block"/>Negative</span>
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-[#ef4444] inline-block"/>Complaint</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-[#6366f1] inline-block"/>Suggestion</span>
           </div>
         </Card>
       </div>
@@ -502,10 +516,10 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
 
       <Divider />
 
-      {/* ── Top Issues + Rating Distribution ──────────────────────────────── */}
+      {/* ── Top Issues + Top Suggestions ──────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-8">
 
-        {/* Top Issues needing attention */}
+        {/* Top Issues */}
         <Card>
           <SectionTitle>🔴 Top Issues Requiring Attention</SectionTitle>
           {topIssues.length === 0
@@ -520,18 +534,56 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
                       <p className="text-sm text-slate-200 capitalize truncate">{issue.subcategory}</p>
                       <p className="text-xs text-slate-500 capitalize">{issue.category}</p>
                     </div>
-                    <div className="text-right shrink-0">
-                      <span
-                        className="text-sm font-bold"
-                        style={{ color: issue.sentiment === 'complaint' ? '#ef4444' : '#f97316' }}
-                      >
-                        {issue.count}×
-                      </span>
-                    </div>
+                    <span className="text-sm font-bold shrink-0"
+                          style={{ color: issue.sentiment === 'complaint' ? '#ef4444' : '#f97316' }}>
+                      {issue.count}×
+                    </span>
                   </div>
                 ))}
               </div>
             )}
+        </Card>
+
+        {/* Top Suggestions */}
+        <Card>
+          <SectionTitle>💡 Top Customer Suggestions</SectionTitle>
+          {topSuggestions.length === 0
+            ? <p className="text-slate-500 text-sm">No suggestions recorded yet</p>
+            : (
+              <div className="space-y-2">
+                {topSuggestions.map((s, i) => (
+                  <div key={i} className="flex items-center gap-3 p-2.5 bg-[#131720] rounded-xl">
+                    <span className="text-base">💡</span>
+                    <span className="text-base">{CATEGORY_EMOJI[s.category] ?? '📌'}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-slate-200 capitalize truncate">{s.subcategory}</p>
+                      <p className="text-xs text-slate-500 capitalize">{s.category}</p>
+                    </div>
+                    <span className="text-sm font-bold text-[#6366f1] shrink-0">{s.count}×</span>
+                  </div>
+                ))}
+              </div>
+            )}
+        </Card>
+      </div>
+
+      {/* ── Trend + Rating Distribution ────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-8">
+
+        {/* Monthly Trend */}
+        <Card>
+          <SectionTitle>📈 Monthly Review Trend</SectionTitle>
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={trendData} margin={{ left: 0, right: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" />
+              <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 11 }} />
+              <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} />
+              <Tooltip contentStyle={{ background: '#1a1f2e', border: 'none', borderRadius: 8 }}
+                labelStyle={{ color: '#e2e8f0' }} />
+              <Line type="monotone" dataKey="count" stroke="#6c8ef7" strokeWidth={2.5}
+                dot={{ fill: '#6c8ef7', r: 4 }} />
+            </LineChart>
+          </ResponsiveContainer>
         </Card>
 
         {/* Rating Distribution */}
@@ -556,31 +608,11 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
         </Card>
       </div>
 
-      {/* ── Trend + Recent ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-8">
-
-        {/* Monthly Trend */}
-        <Card>
-          <SectionTitle>📈 Monthly Review Trend</SectionTitle>
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={trendData} margin={{ left: 0, right: 8 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" />
-              <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 11 }} />
-              <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} />
-              <Tooltip contentStyle={{ background: '#1a1f2e', border: 'none', borderRadius: 8 }}
-                labelStyle={{ color: '#e2e8f0' }} />
-              <Line type="monotone" dataKey="count" stroke="#6c8ef7" strokeWidth={2.5}
-                dot={{ fill: '#6c8ef7', r: 4 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </Card>
-
-        {/* Recent Reviews Feed */}
-        <Card>
-          <SectionTitle>🕐 Recent Reviews</SectionTitle>
-          <ReviewFeed reviews={recentReviews} />
-        </Card>
-      </div>
+      {/* ── Recent Reviews (full width) ─────────────────────────────────────── */}
+      <Card className="mb-8">
+        <SectionTitle>🕐 Recent Reviews</SectionTitle>
+        <ReviewFeed reviews={recentReviews} />
+      </Card>
 
       <p className="text-center text-slate-700 text-xs mt-8">
         📊 VoiceAgent · Customer Review Analytics · © {new Date().getFullYear()}

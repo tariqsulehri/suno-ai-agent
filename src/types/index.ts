@@ -8,7 +8,7 @@ export interface LeadData {
 }
 
 // ── Review capture ─────────────────────────────────────────────────────────────
-export type ReviewSentiment = 'positive' | 'negative' | 'complaint' | null
+export type ReviewSentiment = 'positive' | 'negative' | 'complaint' | 'suggestion' | null
 
 export type ReviewCategory =
   | 'product'    // food quality, wrong item, defective product

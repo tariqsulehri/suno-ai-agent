@@ -1,6 +1,6 @@
 import { isEmbedAuthEnabled, validateEmbedQuery } from '@/lib/security/embed-auth'
 import { VoiceAgentWidget } from '@/components/voice-agent/widget'
-import { FullscreenAgent } from '@/components/voice-agent/fullscreen-agent'
+import { NexusAgent }       from '@/components/voice-agent/nexus-agent'
 import { ThemeProvider, type ThemeColors } from '@/components/voice-agent/theme-provider'
 
 interface VoicePageProps {
@@ -48,7 +48,8 @@ function buildThemeStyle(primary: string, dk: string, lt: string, md: string): s
 export default async function VoicePage({ searchParams }: VoicePageProps) {
   const params = (await searchParams) ?? {}
   const tenantId = typeof params.tenant === 'string' ? params.tenant : undefined
-  const token = typeof params.token === 'string' ? params.token : undefined
+  const token    = typeof params.token  === 'string' ? params.token  : undefined
+  const shopCode = typeof params.shop   === 'string' ? params.shop   : undefined
   const modeParam = typeof params.mode === 'string' ? params.mode : undefined
   const launcherParam = typeof params.launcher === 'string' ? params.launcher : undefined
   const marginParam = typeof params.margin === 'string' ? params.margin : undefined
@@ -105,7 +106,7 @@ export default async function VoicePage({ searchParams }: VoicePageProps) {
 
       <main className="min-h-dvh bg-surface">
         {mode === 'fullscreen' ? (
-          <FullscreenAgent tenantId={tenantId} token={token} />
+          <NexusAgent tenantId={tenantId} token={token} shopCode={shopCode} />
         ) : (
           <VoiceAgentWidget tenantId={tenantId} token={token}
                             mode={mode as 'floating' | 'inline'} margin={margin} />

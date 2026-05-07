@@ -53,6 +53,21 @@ function getTopIssues(): { subcategory: string; category: string; sentiment: str
   } finally { raw.close() }
 }
 
+function getTopSuggestions(): { subcategory: string; category: string; count: number }[] {
+  const raw = rawDb()
+  try {
+    return raw.prepare(`
+      SELECT subcategory, category, COUNT(*) AS count
+      FROM Review
+      WHERE subcategory IS NOT NULL
+        AND sentiment = 'suggestion'
+      GROUP BY subcategory, category
+      ORDER BY count DESC
+      LIMIT 6
+    `).all() as { subcategory: string; category: string; count: number }[]
+  } finally { raw.close() }
+}
+
 function getRecentReviews(): {
   id: string; shopName: string; sentiment: string | null; category: string | null
   subcategory: string | null; rating: number | null; summary: string | null; createdAt: string
@@ -86,44 +101,51 @@ export async function getDashboardData() {
     db.review.count(),
   ])
 
-  const recentTrend      = getTrend()
-  const ratingDist       = getRatingDistribution()
-  const topIssues        = getTopIssues()
-  const recentReviews    = getRecentReviews()
+  const recentTrend   = getTrend()
+  const ratingDist    = getRatingDistribution()
+  const topIssues     = getTopIssues()
+  const topSuggestions = getTopSuggestions()
+  const recentReviews = getRecentReviews()
 
   // ── Per-shop stats ──────────────────────────────────────────────────────────
   const shopStats = shops.map((shop) => {
-    const reviews   = shop.reviews as ReviewRow[]
-    const total     = reviews.length
-    const positive  = reviews.filter((r) => r.sentiment === 'positive').length
-    const negative  = reviews.filter((r) => r.sentiment === 'negative').length
-    const complaint = reviews.filter((r) => r.sentiment === 'complaint').length
-    const ratings   = reviews.map((r) => r.rating).filter((r): r is number => r !== null)
-    const sum       = ratings.reduce((a: number, b: number) => a + b, 0)
+    const reviews    = shop.reviews as ReviewRow[]
+    const total      = reviews.length
+    const positive   = reviews.filter((r) => r.sentiment === 'positive').length
+    const negative   = reviews.filter((r) => r.sentiment === 'negative').length
+    const complaint  = reviews.filter((r) => r.sentiment === 'complaint').length
+    const suggestion = reviews.filter((r) => r.sentiment === 'suggestion').length
+    const ratings    = reviews.map((r) => r.rating).filter((r): r is number => r !== null)
+    const sum        = ratings.reduce((a: number, b: number) => a + b, 0)
 
-    // Category breakdown with sentiment split
-    const categoryBreakdown: Record<string, { total: number; positive: number; negative: number; complaint: number }> = {}
+    // Category breakdown with full sentiment split
+    const categoryBreakdown: Record<string, {
+      total: number; positive: number; negative: number; complaint: number; suggestion: number
+    }> = {}
     for (const r of reviews) {
       if (!r.category) continue
-      if (!categoryBreakdown[r.category]) categoryBreakdown[r.category] = { total: 0, positive: 0, negative: 0, complaint: 0 }
+      if (!categoryBreakdown[r.category])
+        categoryBreakdown[r.category] = { total: 0, positive: 0, negative: 0, complaint: 0, suggestion: 0 }
       categoryBreakdown[r.category].total++
-      if (r.sentiment === 'positive')  categoryBreakdown[r.category].positive++
-      if (r.sentiment === 'negative')  categoryBreakdown[r.category].negative++
-      if (r.sentiment === 'complaint') categoryBreakdown[r.category].complaint++
+      if (r.sentiment === 'positive')   categoryBreakdown[r.category].positive++
+      if (r.sentiment === 'negative')   categoryBreakdown[r.category].negative++
+      if (r.sentiment === 'complaint')  categoryBreakdown[r.category].complaint++
+      if (r.sentiment === 'suggestion') categoryBreakdown[r.category].suggestion++
     }
 
     return {
-      id:               shop.id,
-      tenantId:         shop.tenantId,
-      name:             shop.name,
-      city:             shop.city,
+      id:          shop.id,
+      tenantId:    shop.tenantId,
+      name:        shop.name,
+      city:        shop.city,
       total,
       positive,
       negative,
       complaint,
-      avgRating:        ratings.length ? parseFloat((sum / ratings.length).toFixed(2)) : null,
+      suggestion,
+      avgRating:   ratings.length ? parseFloat((sum / ratings.length).toFixed(2)) : null,
       categoryBreakdown,
-      satisfaction:     ratings.length ? Math.round((sum / ratings.length / 5) * 100) : null,
+      satisfaction: ratings.length ? Math.round((sum / ratings.length / 5) * 100) : null,
     }
   })
 
@@ -140,29 +162,32 @@ export async function getDashboardData() {
 
   // ── Category sentiment split (global) ──────────────────────────────────────
   const allReviewRows = shops.flatMap((s) => s.reviews) as ReviewRow[]
-  const categorySentiment: Record<string, { positive: number; negative: number; complaint: number; total: number }> = {}
+  const categorySentiment: Record<string, {
+    positive: number; negative: number; complaint: number; suggestion: number; total: number
+  }> = {}
   for (const r of allReviewRows) {
     if (!r.category) continue
-    if (!categorySentiment[r.category]) categorySentiment[r.category] = { positive: 0, negative: 0, complaint: 0, total: 0 }
+    if (!categorySentiment[r.category])
+      categorySentiment[r.category] = { positive: 0, negative: 0, complaint: 0, suggestion: 0, total: 0 }
     categorySentiment[r.category].total++
-    if (r.sentiment === 'positive')  categorySentiment[r.category].positive++
-    if (r.sentiment === 'negative')  categorySentiment[r.category].negative++
-    if (r.sentiment === 'complaint') categorySentiment[r.category].complaint++
+    if (r.sentiment === 'positive')   categorySentiment[r.category].positive++
+    if (r.sentiment === 'negative')   categorySentiment[r.category].negative++
+    if (r.sentiment === 'complaint')  categorySentiment[r.category].complaint++
+    if (r.sentiment === 'suggestion') categorySentiment[r.category].suggestion++
   }
 
-  const totalReviews = allReviews
-
   return {
-    totalReviews,
-    avgRating:       avgRatingRaw._avg.rating ? parseFloat(avgRatingRaw._avg.rating.toFixed(2)) : null,
+    totalReviews: allReviews,
+    avgRating:    avgRatingRaw._avg.rating ? parseFloat(avgRatingRaw._avg.rating.toFixed(2)) : null,
     bysentiment,
     bycategory,
     categorySentiment,
-    trend:           recentTrend,
+    trend:        recentTrend,
     ratingDist,
     topIssues,
+    topSuggestions,
     recentReviews,
-    shops:           shopStats,
+    shops:        shopStats,
   }
 }
 

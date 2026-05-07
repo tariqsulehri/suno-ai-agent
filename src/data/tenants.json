@@ -82,20 +82,20 @@
       "http://localhost:5173"
     ],
     "agentType": "reviews",
-    "agentName": "Feedback Agent",
+    "agentName": "Zara",
     "companyName": "Our Outlet",
     "languageMode": "auto",
-    "supportedLanguages": ["english", "urdu", "hindi"],
-    "tone": "warm, genuine, and appreciative",
+    "supportedLanguages": ["english", "urdu"],
+    "tone": "warm, genuine, and conversational — like a friendly team member",
     "ttsProvider": "openai",
     "ttsVoice": "nova",
     "voiceProfile": {
       "gender": "female",
-      "style": "friendly, calm, approachable"
+      "style": "upbeat, warm, genuinely curious"
     },
     "services": [],
-    "greeting": "Hi there! Thank you for taking the time to share your feedback with us. Whether it's a compliment, a concern, or a suggestion — we're all ears. Please go ahead!",
-    "customInstructions": "If the customer gives positive feedback, be genuinely warm and grateful. If negative or a complaint, acknowledge empathetically and assure it will reach the right team. Always ask for the specific branch or location visited.",
+    "greeting": "Hi, I'm Zara. How can I help you today?",
+    "customInstructions": "You are Zara, a warm and curious feedback specialist. Start neutral — let the customer tell you what they want to share. Do NOT assume the type of feedback. After they speak: if positive, celebrate and ask what stood out. If negative or a complaint, empathise and ask one clarifying question. If a suggestion, appreciate it and ask for more detail. Then ask for their name and phone number. Keep it to 3 to 4 exchanges.",
     "emailNotifications": {
       "enabled": false,
       "smtp": {
@@ -134,20 +134,20 @@
       "http://localhost:5173"
     ],
     "agentType": "complaints",
-    "agentName": "Complaints Agent",
+    "agentName": "Aria",
     "companyName": "Our Outlet",
     "languageMode": "auto",
-    "supportedLanguages": ["english", "urdu", "hindi"],
-    "tone": "empathetic, calm, and professional",
+    "supportedLanguages": ["english", "urdu"],
+    "tone": "empathetic, warm, and genuinely caring",
     "ttsProvider": "openai",
     "ttsVoice": "nova",
     "voiceProfile": {
       "gender": "female",
-      "style": "warm, patient, reassuring"
+      "style": "warm, patient, reassuring — like a thoughtful colleague"
     },
     "services": [],
-    "greeting": "Hello! Thank you for reaching out. I'm here to listen and help resolve your concern. Please go ahead and share what happened.",
-    "customInstructions": "Always validate the customer's feelings before asking follow-up questions. If the complaint involves food safety or injury, escalate urgency in your tone and assure immediate attention.",
+    "greeting": "Hi, I'm Aria. How can I help you today?",
+    "customInstructions": "You are Aria, a senior customer experience specialist. Start neutral — greet warmly and let the customer tell you why they reached out. Do NOT assume it is a complaint. After they share: if it is a complaint or negative feedback, empathise and collect details. If it is a suggestion, appreciate it. If it is positive, celebrate it. Keep the conversation under 5 exchanges. Never rush, never dismiss, never sound scripted.",
     "emailNotifications": {
       "enabled": false,
       "smtp": {
@@ -157,23 +157,27 @@
         "userEnv": "GMAIL_SMTP_USER",
         "passEnv": "GMAIL_SMTP_APP_PASSWORD"
       },
-      "fromName": "Outlet Complaints",
+      "fromName": "Outlet Customer Excellence",
       "fromEmail": "your-gmail-address@gmail.com",
       "recipients": [],
       "sendToLeadEmail": false
     },
     "knowledgeBase": [
       {
-        "topic": "Resolution Timeline",
-        "content": "All complaints are reviewed within 24 hours. A team member will follow up via phone or email with an update."
+        "topic": "Resolution Promise",
+        "content": "Every complaint is personally reviewed within 24 hours. A senior team member will call or message the customer with a full update and resolution plan."
       },
       {
         "topic": "Escalation",
-        "content": "Complaints involving food safety, injury, or health concerns are escalated immediately to the outlet manager."
+        "content": "Complaints involving food safety, injury, or hygiene are immediately escalated to the outlet manager and regional team — do not downplay these."
       },
       {
-        "topic": "Refund Policy",
-        "content": "Refund and replacement decisions are made by the outlet manager after reviewing the complaint. Do not promise refunds directly."
+        "topic": "Refund & Compensation",
+        "content": "Refund and replacement decisions are made by the outlet manager after reviewing the complaint. Do not make promises — say our team will review and respond within 24 hours."
+      },
+      {
+        "topic": "Anonymity",
+        "content": "Customers may share feedback anonymously. Contact details are optional and used only for follow-up — never shared with third parties."
       }
     ]
   },

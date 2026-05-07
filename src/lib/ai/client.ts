@@ -1,16 +1,43 @@
 import OpenAI from 'openai'
 import { env } from '@/lib/config/env'
 
-let _defaultClient: OpenAI | null = null
+// ── Provider detection ────────────────────────────────────────────────────────
+// Groq is free and OpenAI-compatible — preferred when GROQ_API_KEY is set.
+// Falls back to OpenAI when only OPENAI_API_KEY is present.
 
-/**
- * Returns an OpenAI client using the given API key, or the server-level
- * OPENAI_API_KEY as fallback. Server-side only — keys must never reach the browser.
- */
-export function getOpenAIClient(apiKey?: string): OpenAI {
-  if (apiKey) return new OpenAI({ apiKey })
-  if (!_defaultClient) {
-    _defaultClient = new OpenAI({ apiKey: env.OPENAI_API_KEY })
-  }
-  return _defaultClient
+export type LLMProvider = 'groq' | 'openai'
+
+export function getProvider(): LLMProvider {
+  return env.GROQ_API_KEY ? 'groq' : 'openai'
 }
+
+// Model names per provider
+export const CHAT_MODEL: Record<LLMProvider, string> = {
+  groq:   'llama-3.3-70b-versatile',
+  openai: 'gpt-4o-mini',       // ~33× cheaper than gpt-4o, more than enough for review chat
+}
+export const SUMMARY_MODEL: Record<LLMProvider, string> = {
+  groq:   'llama-3.1-8b-instant',   // fast + free for short summaries
+  openai: 'gpt-4o-mini',
+}
+
+// ── Singleton client ──────────────────────────────────────────────────────────
+let _client: OpenAI | null = null
+
+export function getLLMClient(apiKey?: string): OpenAI {
+  if (apiKey) return new OpenAI({ apiKey })
+  if (!_client) {
+    if (env.GROQ_API_KEY) {
+      _client = new OpenAI({
+        apiKey:  env.GROQ_API_KEY,
+        baseURL: 'https://api.groq.com/openai/v1',
+      })
+    } else {
+      _client = new OpenAI({ apiKey: env.OPENAI_API_KEY })
+    }
+  }
+  return _client
+}
+
+// Keep old name as alias so other files don't need changes yet
+export const getOpenAIClient = getLLMClient

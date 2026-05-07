@@ -1,22 +1,20 @@
 import { z } from 'zod'
 
-/**
- * Server-level environment variables — API keys and platform config.
- * Per-tenant settings (language, TTS, voice, persona) live in tenants.json.
- *
- * Server-side only. Never import this in client components.
- */
 const envSchema = z.object({
-  OPENAI_API_KEY: z.string().min(1, 'OPENAI_API_KEY is required'),
+  // ── LLM providers — set ONE (Groq is free; OpenAI requires credits) ──────────
+  OPENAI_API_KEY: z.string().optional(),
+  GROQ_API_KEY:   z.string().optional(),
 
-  // ElevenLabs — only required when a tenant uses ttsProvider: "elevenlabs"
+  // ── ElevenLabs TTS — only needed when a tenant uses ttsProvider: "elevenlabs" ─
   ELEVENLABS_API_KEY:  z.string().optional(),
   ELEVENLABS_VOICE_ID: z.string().default('pNInz6obpgDQGcFmaJgB'),
 
-  // Embed security
+  // ── Embed security ────────────────────────────────────────────────────────────
   EMBED_AUTH_ENABLED: z.enum(['true', 'false']).default('false'),
-
-})
+}).refine(
+  (d) => !!(d.OPENAI_API_KEY || d.GROQ_API_KEY),
+  { message: 'Set either OPENAI_API_KEY or GROQ_API_KEY in your .env.local' }
+)
 
 export type Env = z.infer<typeof envSchema>
 
@@ -24,10 +22,12 @@ function validateEnv(): Env {
   const result = envSchema.safeParse(process.env)
   if (!result.success) {
     const errors = result.error.flatten().fieldErrors
-    const message = Object.entries(errors)
-      .map(([k, v]) => `  ${k}: ${v?.join(', ')}`)
-      .join('\n')
-    throw new Error(`\n[env] Invalid environment variables:\n${message}\n`)
+    const root   = result.error.flatten().formErrors
+    const lines  = [
+      ...Object.entries(errors).map(([k, v]) => `  ${k}: ${v?.join(', ')}`),
+      ...root,
+    ]
+    throw new Error(`\n[env] Invalid environment variables:\n${lines.join('\n')}\n`)
   }
   return result.data
 }

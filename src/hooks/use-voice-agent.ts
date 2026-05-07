@@ -1,8 +1,10 @@
 'use client'
 
 import { useReducer, useCallback, useEffect, useRef, useState } from 'react'
-import { useAudioRecorder } from './use-audio-recorder'
-import { useAudioPlayer }   from './use-audio-player'
+import { useAudioRecorder }      from './use-audio-recorder'
+import { useAudioPlayer }        from './use-audio-player'
+import { useSpeechSynthesis }    from './use-speech-synthesis'
+import { useSpeechRecognition }  from './use-speech-recognition'
 import type {
   Phase,
   VoiceAgentState,
@@ -87,28 +89,36 @@ const initialState: VoiceAgentState = {
 
 // ── Public interface ───────────────────────────────────────────────────────────
 export interface UseVoiceAgentOptions {
-  tenantId?: string
-  token?:    string
+  tenantId?:            string
+  token?:               string
+  shopCode?:            string  // which shop/branch this agent is deployed at
+  defaultOutputMode?:   'voice' | 'text'
+  continuousRecording?: boolean
+  webSpeech?:           boolean
+  browserTts?:          boolean
 }
 
 export interface UseVoiceAgentReturn {
-  phase:        Phase
-  transcript:   Message[]
-  partialReply: string
-  error:        string | null
-  isRecording:  boolean
-  hasSpeech:    boolean
-  isPlaying:    boolean
-  language:     string
-  voice:        OpenAIVoice
-  outputMode:   'voice' | 'text'
-  leadData:     LeadData
-  reviewData:   ReviewData
-  callSummary:  CallSummary | null
-  agentName:    string
-  companyName:  string
+  phase:              Phase
+  transcript:         Message[]
+  partialReply:       string
+  error:              string | null
+  isRecording:        boolean
+  hasSpeech:          boolean
+  isPlaying:          boolean
+  language:           string
+  voice:              OpenAIVoice
+  outputMode:         'voice' | 'text'
+  leadData:           LeadData
+  reviewData:         ReviewData
+  callSummary:        CallSummary | null
+  agentName:          string
+  companyName:        string
+  liveTranscript:     string
+  webSpeechSupported: boolean
   setVoice:        (v: OpenAIVoice) => void
   setOutputMode:   (m: 'voice' | 'text') => void
+  setLanguage:     (lang: string) => void
   stopPlayback: () => void
   toggleMic:    () => void
   pressMic:     () => void
@@ -117,144 +127,66 @@ export interface UseVoiceAgentReturn {
 }
 
 // ── Hook ───────────────────────────────────────────────────────────────────────
-export function useVoiceAgent({ tenantId, token }: UseVoiceAgentOptions = {}): UseVoiceAgentReturn {
-  const [state, dispatch]       = useReducer(reducer, initialState)
-  const [voice, setVoice]       = useState<OpenAIVoice>('nova')
-  const [language, setLang]     = useState('English')
-  const [agentName, setAgent]   = useState('Agent')
+export function useVoiceAgent({
+  tenantId,
+  token,
+  shopCode,
+  defaultOutputMode   = 'text',
+  continuousRecording = false,
+  webSpeech           = false,
+  browserTts          = false,
+}: UseVoiceAgentOptions = {}): UseVoiceAgentReturn {
+  const [state, dispatch]     = useReducer(reducer, initialState)
+  const [voice, setVoice]     = useState<OpenAIVoice>('nova')
+  const [language, setLang]   = useState('English')
+  const [agentName, setAgent] = useState('Agent')
   const [companyName, setCompany] = useState('')
-  const [outputMode, setOutputModeState] = useState<'voice' | 'text'>('text')
-  const [embedHeaders, setEmbedHeaders] = useState<Record<string, string>>({})
+  const [outputMode, setOutputModeState] = useState<'voice' | 'text'>(defaultOutputMode)
+  const [embedHeaders, setEmbedHeaders]  = useState<Record<string, string>>({})
   const embedHeadersRef = useRef<Record<string, string>>({})
 
-  // Keep voice + outputMode in refs so async callbacks always read the latest value
   const voiceRef = useRef<OpenAIVoice>('nova')
   const handleSetVoice = useCallback((v: OpenAIVoice) => {
     voiceRef.current = v
     setVoice(v)
   }, [])
 
-  const outputModeRef = useRef<'voice' | 'text'>('text')
+  const outputModeRef = useRef<'voice' | 'text'>(defaultOutputMode)
   const setOutputMode = useCallback((m: 'voice' | 'text') => {
     outputModeRef.current = m
     setOutputModeState(m)
   }, [])
 
-  // Conversation history sent to /api/chat
   const historyRef = useRef<ChatHistory>([])
-
-  // ── Audio player ─────────────────────────────────────────────────────────────
-  const stateRef = useRef(state)
+  const stateRef   = useRef(state)
   stateRef.current = state
-  const leadRef   = useRef<LeadData>(EMPTY_LEAD)
-  const reviewRef = useRef<ReviewData>(EMPTY_REVIEW)
+  const leadRef    = useRef<LeadData>(EMPTY_LEAD)
+  const reviewRef  = useRef<ReviewData>(EMPTY_REVIEW)
 
-  const { isPlaying, enqueue, stopAll } = useAudioPlayer({
+  // ── TTS: API audio player (OpenAI/ElevenLabs) ────────────────────────────────
+  const apiPlayer = useAudioPlayer({
     requestHeaders: embedHeaders,
     onPlaybackEnd: () => {
-      if (stateRef.current.phase === 'speaking') {
-        dispatch({ type: 'SPEAKING_DONE' })
-      }
+      if (stateRef.current.phase === 'speaking') dispatch({ type: 'SPEAKING_DONE' })
     },
   })
 
-  // ── Audio recorder ───────────────────────────────────────────────────────────
-  const { isRecording, hasSpeech, start: startRec, stop: stopRec } = useAudioRecorder({
-    onAudioReady: async (blob) => {
-      dispatch({ type: 'STOP_LISTENING' })
-      await processAudio(blob)
+  // ── TTS: Browser SpeechSynthesis (free, no API) ───────────────────────────────
+  const browserPlayer = useSpeechSynthesis({
+    language,
+    onPlaybackEnd: () => {
+      if (stateRef.current.phase === 'speaking') dispatch({ type: 'SPEAKING_DONE' })
     },
   })
 
-  // ── Boot: load config + generate opening greeting ─────────────────────────────
-  useEffect(() => {
-    const parent = document.referrer || ''
+  // Use the right player based on flag
+  const { isPlaying, enqueue, stopAll } = browserTts ? browserPlayer : apiPlayer
 
-    const headers: Record<string, string> = {}
-    // Prefer props (SSR-forwarded) then fall back to URL params
-    const resolvedTenant = tenantId ?? new URLSearchParams(window.location.search).get('tenant') ?? ''
-    const resolvedToken  = token    ?? new URLSearchParams(window.location.search).get('token')  ?? ''
-    if (resolvedTenant) headers['x-embed-tenant'] = resolvedTenant
-    if (resolvedToken)  headers['x-embed-token']  = resolvedToken
-    if (parent)         headers['x-embed-parent']  = parent
-    embedHeadersRef.current = headers
-    setEmbedHeaders(headers)
-
-    let cancelled = false
-
-    async function boot() {
-      try {
-        const cfg = await fetch('/api/config', {
-          headers,
-        }).then((r) => r.json())
-        if (!cancelled && cfg.voice)       handleSetVoice(cfg.voice as OpenAIVoice)
-        if (!cancelled && cfg.language)    setLang(cfg.language)
-        if (!cancelled && cfg.agentName)   setAgent(cfg.agentName)
-        if (!cancelled && cfg.companyName) setCompany(cfg.companyName)
-
-        if (cfg.greeting && !cancelled) {
-          // Use the exact hardcoded greeting — guaranteed verbatim, no LLM
-          const greetingText = cfg.greeting as string
-          dispatch({ type: 'REPLY_COMPLETE', fullText: greetingText, endCall: false })
-          if (outputModeRef.current === 'voice') enqueue(greetingText)
-          else dispatch({ type: 'SPEAKING_DONE' })
-          historyRef.current.push({ role: 'assistant', content: greetingText })
-        } else {
-          await streamChat([{ role: 'user', content: '__GREET__' }], cancelled ? null : dispatch)
-        }
-
-        if (!cancelled) dispatch({ type: 'CONNECTED' })
-      } catch (err) {
-        if (!cancelled) dispatch({ type: 'ERROR', message: String(err) })
-      }
-    }
-
-    boot()
-    return () => { cancelled = true }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // ── Process recorded audio ────────────────────────────────────────────────────
-  async function processAudio(blob: Blob) {
-    const form = new FormData()
-    form.append('audio', blob, 'audio.webm')
-
-    let userText: string
-    try {
-      const res  = await fetch('/api/transcribe', {
-        method: 'POST',
-        headers: embedHeadersRef.current,
-        body: form,
-      })
-      const data = await res.json()
-      userText   = data.text ?? ''
-    } catch {
-      dispatch({ type: 'ERROR', message: 'Transcription failed. Please try again.' })
-      return
-    }
-
-    if (!userText.trim()) {
-      dispatch({ type: 'CONNECTED' })
-      return
-    }
-
-    dispatch({ type: 'TRANSCRIBED', text: userText })
-    historyRef.current.push({ role: 'user', content: userText })
-
-    await streamChat(historyRef.current, dispatch)
-  }
-
-  // ── SSE chat stream consumer ──────────────────────────────────────────────────
-  async function streamChat(
-    messages: ChatHistory,
-    dispatchFn: typeof dispatch | null
-  ) {
+  // ── SSE chat stream ───────────────────────────────────────────────────────────
+  async function streamChat(messages: ChatHistory, dispatchFn: typeof dispatch | null) {
     const res = await fetch('/api/chat', {
       method:  'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...embedHeadersRef.current,
-      },
+      headers: { 'Content-Type': 'application/json', ...embedHeadersRef.current },
       body:    JSON.stringify({ messages }),
     })
 
@@ -281,12 +213,8 @@ export function useVoiceAgent({ tenantId, token }: UseVoiceAgentOptions = {}): U
           dispatchFn?.({ type: 'ERROR', message: String(event.error) })
           return
         }
-        if (event.token) {
-          dispatchFn?.({ type: 'STREAM_TOKEN', token: String(event.token) })
-        }
-        if (event.sentence) {
-          if (outputModeRef.current === 'voice') enqueue(String(event.sentence))
-        }
+        if (event.token)    dispatchFn?.({ type: 'STREAM_TOKEN', token: String(event.token) })
+        if (event.sentence) { if (outputModeRef.current === 'voice') enqueue(String(event.sentence)) }
         if (event.lead) {
           leadRef.current = { ...leadRef.current, ...(event.lead as LeadData) }
           dispatchFn?.({ type: 'LEAD_UPDATE', lead: event.lead as LeadData })
@@ -299,30 +227,20 @@ export function useVoiceAgent({ tenantId, token }: UseVoiceAgentOptions = {}): U
           const fullText = String(event.fullText ?? '')
           const endCall  = Boolean(event.endCall)
           dispatchFn?.({ type: 'REPLY_COMPLETE', fullText, endCall })
-          // In text mode no audio plays, so manually release the speaking phase
-          if (outputModeRef.current === 'text' && !endCall) {
-            dispatchFn?.({ type: 'SPEAKING_DONE' })
-          }
+          if (outputModeRef.current === 'text' && !endCall) dispatchFn?.({ type: 'SPEAKING_DONE' })
           historyRef.current.push({ role: 'assistant', content: fullText })
           if (endCall) {
             const lead   = leadRef.current
             const review = reviewRef.current
-            // Generate summary in background — don't block the farewell
             fetch('/api/summarize', {
               method:  'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                ...embedHeadersRef.current,
-              },
+              headers: { 'Content-Type': 'application/json', ...embedHeadersRef.current },
               body:    JSON.stringify({ messages: historyRef.current, lead, review }),
             })
               .then((r) => r.json())
               .then((data: CallSummary) => {
                 dispatchFn?.({ type: 'CALL_SUMMARY', summary: data })
-                console.log(
-                  '[Call Report]',
-                  JSON.stringify({ lead, review, ...data }, null, 2)
-                )
+                console.log('[Call Report]', JSON.stringify({ lead, review, ...data }, null, 2))
               })
               .catch((err) => console.error('[summarize]', err))
           }
@@ -331,19 +249,118 @@ export function useVoiceAgent({ tenantId, token }: UseVoiceAgentOptions = {}): U
     }
   }
 
+  // ── Web Speech API path ───────────────────────────────────────────────────────
+  // Called when browser recognition returns the final transcript — no API call needed
+  const onSpeechTranscript = useCallback((text: string) => {
+    if (!text.trim()) { dispatch({ type: 'CONNECTED' }); return }
+    dispatch({ type: 'STOP_LISTENING' })
+    dispatch({ type: 'TRANSCRIBED', text })
+    historyRef.current.push({ role: 'user', content: text })
+    streamChat(historyRef.current, dispatch)
+  // streamChat uses only refs/stable values — safe with empty deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const speechRec = useSpeechRecognition({
+    enabled:      webSpeech,
+    language,
+    onTranscript: onSpeechTranscript,
+    onError:      (msg) => dispatch({ type: 'ERROR', message: msg }),
+  })
+
+  // ── MediaRecorder + Whisper path ──────────────────────────────────────────────
+  const audioRec = useAudioRecorder({
+    enabled:    !webSpeech,            // disabled when using Web Speech
+    continuous: continuousRecording,
+    onAudioReady: async (blob) => {
+      dispatch({ type: 'STOP_LISTENING' })
+      await processAudio(blob)
+    },
+  })
+
+  async function processAudio(blob: Blob) {
+    const form = new FormData()
+    form.append('audio', blob, 'audio.webm')
+    let userText: string
+    try {
+      const res  = await fetch('/api/transcribe', {
+        method: 'POST', headers: embedHeadersRef.current, body: form,
+      })
+      const data = await res.json()
+      userText   = data.text ?? ''
+    } catch {
+      dispatch({ type: 'ERROR', message: 'Transcription failed. Please try again.' })
+      return
+    }
+    if (!userText.trim()) { dispatch({ type: 'CONNECTED' }); return }
+    dispatch({ type: 'TRANSCRIBED', text: userText })
+    historyRef.current.push({ role: 'user', content: userText })
+    await streamChat(historyRef.current, dispatch)
+  }
+
+  // ── Unified recording state (from whichever path is active) ──────────────────
+  const isRecording = webSpeech ? speechRec.isRecording : audioRec.isRecording
+  const hasSpeech   = webSpeech ? speechRec.hasSpeech   : audioRec.hasSpeech
+  const startRec    = webSpeech ? speechRec.start        : audioRec.start
+  const stopRec     = webSpeech ? speechRec.stop         : audioRec.stop
+
+  // ── Boot ─────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const parent = document.referrer || ''
+    const headers: Record<string, string> = {}
+    const resolvedTenant = tenantId ?? new URLSearchParams(window.location.search).get('tenant') ?? ''
+    const resolvedToken  = token    ?? new URLSearchParams(window.location.search).get('token')  ?? ''
+    const resolvedShop = shopCode ?? new URLSearchParams(window.location.search).get('shop') ?? ''
+    if (resolvedTenant) headers['x-embed-tenant'] = resolvedTenant
+    if (resolvedToken)  headers['x-embed-token']  = resolvedToken
+    if (parent)         headers['x-embed-parent']  = parent
+    if (resolvedShop)   headers['x-embed-shop']   = resolvedShop
+    embedHeadersRef.current = headers
+    setEmbedHeaders(headers)
+
+    let cancelled = false
+
+    async function boot() {
+      try {
+        const cfg = await fetch('/api/config', { headers }).then((r) => r.json())
+        if (!cancelled && cfg.voice)       handleSetVoice(cfg.voice as OpenAIVoice)
+        // 'Auto' means the tenant supports multiple languages — default mic to English
+        if (!cancelled && cfg.language)    setLang(cfg.language === 'Auto' ? 'English' : cfg.language)
+        if (!cancelled && cfg.agentName)   setAgent(cfg.agentName)
+        if (!cancelled && cfg.companyName) setCompany(cfg.companyName)
+
+        if (cfg.greeting && !cancelled) {
+          const greetingText = cfg.greeting as string
+          dispatch({ type: 'REPLY_COMPLETE', fullText: greetingText, endCall: false })
+          if (outputModeRef.current === 'voice') enqueue(greetingText)
+          else dispatch({ type: 'SPEAKING_DONE' })
+          historyRef.current.push({ role: 'assistant', content: greetingText })
+        } else {
+          await streamChat([{ role: 'user', content: '__GREET__' }], cancelled ? null : dispatch)
+        }
+        if (!cancelled) dispatch({ type: 'CONNECTED' })
+      } catch (err) {
+        if (!cancelled) dispatch({ type: 'ERROR', message: String(err) })
+      }
+    }
+
+    boot()
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // ── Text send ─────────────────────────────────────────────────────────────────
   const sendText = useCallback((text: string) => {
     const phase = stateRef.current.phase
     if (!text.trim()) return
     if (phase !== 'idle' && phase !== 'error') return
-
     dispatch({ type: 'TRANSCRIBED', text })
     historyRef.current.push({ role: 'user', content: text })
     streamChat(historyRef.current, dispatch)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ── Mic toggle (click mode) ───────────────────────────────────────────────────
+  // ── Mic controls ─────────────────────────────────────────────────────────────
   const toggleMic = useCallback(() => {
     const phase = stateRef.current.phase
     if (phase === 'speaking' || phase === 'thinking') {
@@ -351,17 +368,13 @@ export function useVoiceAgent({ tenantId, token }: UseVoiceAgentOptions = {}): U
       dispatch({ type: 'CONNECTED' })
       return
     }
-    if (isRecording) {
-      stopRec()
-      return
-    }
-    if (phase === 'idle') {
+    if (isRecording) { stopRec(); return }
+    if (phase === 'idle' || phase === 'error') {
       dispatch({ type: 'START_LISTENING' })
       startRec().catch((err) => dispatch({ type: 'ERROR', message: String(err) }))
     }
   }, [isRecording, startRec, stopRec, stopAll])
 
-  // ── Push-to-talk ──────────────────────────────────────────────────────────────
   const pressMic = useCallback(() => {
     const phase = stateRef.current.phase
     if (phase !== 'idle' && phase !== 'error') return
@@ -371,28 +384,31 @@ export function useVoiceAgent({ tenantId, token }: UseVoiceAgentOptions = {}): U
 
   const releaseMic = useCallback(() => {
     if (!isRecording) return
-    stopRec()   // fires onAudioReady → transcribe → send
+    stopRec()
   }, [isRecording, stopRec])
 
   return {
-    phase:        state.phase,
-    transcript:   state.transcript,
-    partialReply: state.partialReply,
-    error:        state.error,
+    phase:              state.phase,
+    transcript:         state.transcript,
+    partialReply:       state.partialReply,
+    error:              state.error,
     isRecording,
     hasSpeech,
     isPlaying,
     language,
     voice,
     outputMode,
-    leadData:     state.leadData,
-    reviewData:   state.reviewData,
-    callSummary:  state.callSummary,
+    leadData:           state.leadData,
+    reviewData:         state.reviewData,
+    callSummary:        state.callSummary,
     agentName,
     companyName,
-    setVoice:      handleSetVoice,
+    liveTranscript:     speechRec.liveText,
+    webSpeechSupported: speechRec.isSupported,
+    setVoice:           handleSetVoice,
     setOutputMode,
-    stopPlayback:  stopAll,
+    setLanguage:        setLang,
+    stopPlayback:       stopAll,
     toggleMic,
     pressMic,
     releaseMic,

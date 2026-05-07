@@ -25,8 +25,9 @@ export async function POST(req: NextRequest) {
   const tenant   = getTenantFromRequest(req)
   const shopCode = req.headers.get('x-embed-shop') ?? ''
   const shop     = shopCode
-    ? await db.shop.findFirst({ where: { branchCode: shopCode } })
-    : null
+    ? await db.shop.findFirst({ where: { tenantId: tenant.id, branchCode: shopCode } })
+        ?? await db.shop.findFirst({ where: { tenantId: tenant.id } })
+    : await db.shop.findFirst({ where: { tenantId: tenant.id } })
 
   let messages: ChatMessage[]
   try {
@@ -44,20 +45,67 @@ export async function POST(req: NextRequest) {
   }
 
   // Strip hidden tokens + any truncated token debris (e.g. dangling "}]" from cut-off tokens)
-  const TOKEN_RE   = /\[(LEAD|REVIEW|END_CALL):([\s\S]*?)\]/g
+  function findJsonToken(text: string, name: string): { value: string; start: number; end: number } | null {
+    const marker = `[${name}:`
+    const start = text.indexOf(marker)
+    if (start < 0) return null
+
+    const jsonStart = text.indexOf('{', start + marker.length)
+    if (jsonStart < 0) return null
+
+    let depth = 0
+    let inString = false
+    let escaped = false
+
+    for (let i = jsonStart; i < text.length; i++) {
+      const ch = text[i]
+
+      if (escaped) {
+        escaped = false
+        continue
+      }
+      if (ch === '\\') {
+        escaped = inString
+        continue
+      }
+      if (ch === '"') {
+        inString = !inString
+        continue
+      }
+      if (inString) continue
+
+      if (ch === '{') depth++
+      if (ch === '}') {
+        depth--
+        if (depth === 0) {
+          const close = text[i + 1] === ']' ? i + 2 : i + 1
+          return { value: text.slice(jsonStart, i + 1), start, end: close }
+        }
+      }
+    }
+
+    return null
+  }
+
   function stripTokens(text: string): string {
-    return text
-      .replace(TOKEN_RE, '')
+    let cleaned = text
+    for (const name of ['LEAD', 'REVIEW']) {
+      let token = findJsonToken(cleaned, name)
+      while (token) {
+        cleaned = `${cleaned.slice(0, token.start)}${cleaned.slice(token.end)}`
+        token = findJsonToken(cleaned, name)
+      }
+    }
+    return cleaned
       .replace(/\[END_CALL\]/g, '')
       .replace(/\s*\}?\]?\s*$/, '')    // remove trailing debris from truncated tokens
       .replace(/\s{2,}/g, ' ')
       .trim()
   }
   function extractToken<T>(text: string, name: string): T | null {
-    const re = new RegExp(`\\[${name}:([\\s\\S]*?)\\]`)
-    const m  = text.match(re)
-    if (!m) return null
-    try { return JSON.parse(m[1]) as T } catch { return null }
+    const token = findJsonToken(text, name)
+    if (!token) return null
+    try { return JSON.parse(token.value) as T } catch { return null }
   }
 
   const stream = new ReadableStream({

@@ -80,7 +80,6 @@ export function useAudioPlayer({
       }
 
       const url = URL.createObjectURL(blob)
-
       await new Promise<void>((resolve) => {
         const audio = new Audio(url)
         currentAudio.current = audio

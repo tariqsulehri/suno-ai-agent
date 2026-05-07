@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { useVoiceAgent } from '@/hooks/use-voice-agent'
+import { AnimatedAvatar } from './avatar'
 import type { Phase } from '@/types'
 
 // ── End-state messages per sentiment ──────────────────────────────────────────
@@ -52,7 +53,7 @@ export function NexusAgent({ tenantId, token, shopCode }: Props) {
 
   const {
     phase, transcript, partialReply, error,
-    isRecording, isPlaying,
+    isRecording,
     setOutputMode,
     agentName, companyName,
     language, setLanguage,
@@ -265,9 +266,10 @@ export function NexusAgent({ tenantId, token, shopCode }: Props) {
             </div>
           </header>
 
-          {/* ── Agent orb ───────────────────────────────────────────────── */}
+          {/* ── Agent avatar ─────────────────────────────────────────────── */}
           <div className="nx-orb-section">
-            <NxOrb phase={phase} color={color} isPlaying={isPlaying} />
+            <AnimatedAvatar phase={phase} color={color} />
+
             <p className="nx-agent-name">{agentName || 'Review Agent'}</p>
             <p className="nx-status-txt">
               {error && phase === 'error' ? error : STATUS[phase]}
@@ -426,117 +428,6 @@ export function NexusAgent({ tenantId, token, shopCode }: Props) {
 
         </div>
       )}
-    </div>
-  )
-}
-
-// ── Animated AI orb avatar ─────────────────────────────────────────────────────
-function NxOrb({ phase, color, isPlaying }: { phase: Phase; color: string; isPlaying: boolean }) {
-  const speaking  = phase === 'speaking' || isPlaying
-  const listening = phase === 'listening'
-  const thinking  = phase === 'thinking' || phase === 'transcribing'
-  const gradId    = 'nxOrb'   // single instance on page — safe to hardcode
-
-  return (
-    <div className="nx-orb-wrap">
-      {/* Listening pulse rings */}
-      {listening && (
-        <>
-          <div className="nx-lp nx-lp1" style={{ borderColor: color }} />
-          <div className="nx-lp nx-lp2" style={{ borderColor: color }} />
-        </>
-      )}
-
-      {/* Ambient glow backdrop */}
-      <div className="nx-orb-glow"
-           style={{ background: `radial-gradient(circle, ${color}30, transparent 70%)` }} />
-
-      <svg viewBox="0 0 220 220" className="nx-orb-svg" overflow="visible">
-        <defs>
-          <radialGradient id={gradId} cx="35%" cy="28%" r="72%">
-            <stop offset="0%"   stopColor="white"    stopOpacity="0.42" />
-            <stop offset="38%"  stopColor={color}    stopOpacity="0.88" />
-            <stop offset="80%"  stopColor="#080A1C"  stopOpacity="1" />
-            <stop offset="100%" stopColor="#050816"  stopOpacity="1" />
-          </radialGradient>
-          <filter id="nxGlow" x="-40%" y="-40%" width="180%" height="180%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="9" result="b" />
-            <feComposite  in="SourceGraphic"  in2="b" operator="over" />
-          </filter>
-        </defs>
-
-        {/* Orbital ring 1 */}
-        <g style={{
-          transformBox:    'fill-box',
-          transformOrigin: 'center',
-          animation:       `nx-spin ${speaking ? '3s' : '11s'} linear infinite`,
-        }}>
-          <ellipse cx="110" cy="110" rx="100" ry="28"
-            fill="none" stroke={color} strokeWidth="1" opacity="0.38" />
-          <circle  cx="210" cy="110" r="3.5" fill={color} opacity="0.75" />
-        </g>
-
-        {/* Orbital ring 2 */}
-        <g transform="rotate(65 110 110)"
-           style={{
-             transformBox:    'fill-box',
-             transformOrigin: 'center',
-             animation:       `nx-spin ${speaking ? '4.5s' : '16s'} linear infinite reverse`,
-           }}>
-          <ellipse cx="110" cy="110" rx="100" ry="28"
-            fill="none" stroke={color} strokeWidth="0.8" opacity="0.25" />
-          <circle  cx="210" cy="110" r="2.5" fill={color} opacity="0.55" />
-        </g>
-
-        {/* Soft outer ambient ring */}
-        <circle cx="110" cy="110" r="106"
-          fill="none" stroke={color} strokeWidth="0.5" opacity="0.1" />
-
-        {/* Glow halo */}
-        <circle cx="110" cy="110" r="68" fill={color} opacity="0.1"
-          filter="url(#nxGlow)" />
-
-        {/* Main sphere */}
-        <circle cx="110" cy="110" r="62" fill={`url(#${gradId})`} />
-
-        {/* Specular highlight */}
-        <ellipse cx="90" cy="84" rx="19" ry="12"
-          fill="white" opacity="0.22" transform="rotate(-22 90 84)" />
-
-        {/* ── Speaking: waveform bars ── */}
-        {speaking && ([-24, -16, -8, 0, 8, 16, 24] as const).map((x, i) => (
-          <rect key={i}
-            x={109 + x} y={96} width={4} height={28}
-            rx={2} fill={color} opacity={0.88}
-            style={{
-              animation:       `nx-wave ${0.28 + (i % 4) * 0.07}s ease-in-out infinite alternate`,
-              animationDelay:  `${i * 0.065}s`,
-              transformBox:    'fill-box',
-              transformOrigin: 'center',
-            }}
-          />
-        ))}
-
-        {/* ── Thinking: pulsing dots ── */}
-        {thinking && ([-14, 0, 14] as const).map((x, i) => (
-          <circle key={i}
-            cx={110 + x} cy={110} r={5.5}
-            fill={color}
-            style={{
-              animation:      `nx-tdot 0.85s ease-in-out infinite`,
-              animationDelay: `${i * 0.23}s`,
-            }}
-          />
-        ))}
-
-        {/* ── Idle: slow heartbeat ring ── */}
-        {!speaking && !thinking && !listening && phase !== 'connecting' && (
-          <circle cx="110" cy="110" r="62"
-            fill="none" stroke={color} strokeWidth="2" opacity="0.18"
-            style={{ animation: 'nx-idlering 3s ease-in-out infinite' }}
-          />
-        )}
-      </svg>
     </div>
   )
 }

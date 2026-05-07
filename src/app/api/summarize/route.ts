@@ -133,14 +133,7 @@ async function persistReview({
 
     initVectorTable()
 
-    const shop = shopCode
-      ? await db.shop.findFirst({ where: { branchCode: shopCode } })
-      : null
-
-    if (!shop) {
-      console.warn('[persist-review] No valid shop for branchCode:', shopCode || '(none)')
-      return
-    }
+    const shop = await resolveReviewShop(tenant, shopCode)
 
     // Save structured review row
     const created = await db.review.create({
@@ -176,5 +169,37 @@ async function persistReview({
 
   } catch (err) {
     console.error('[persist-review]', err)
+    throw err
   }
+}
+
+async function resolveReviewShop(
+  tenant: ReturnType<typeof getTenantFromRequest>,
+  shopCode: string
+) {
+  const branchCode = shopCode.trim() || null
+
+  if (branchCode) {
+    const byBranch = await db.shop.findFirst({ where: { tenantId: tenant.id, branchCode } })
+    if (byBranch) return byBranch
+  }
+
+  const byTenant = await db.shop.findFirst({ where: { tenantId: tenant.id } })
+  if (byTenant) {
+    if (branchCode && !byTenant.branchCode) {
+      return db.shop.update({
+        where: { tenantId: tenant.id },
+        data:  { branchCode },
+      })
+    }
+    return byTenant
+  }
+
+  return db.shop.create({
+    data: {
+      tenantId:    tenant.id,
+      name:        branchCode ? `${tenant.companyName} ${branchCode}` : tenant.companyName,
+      branchCode,
+    },
+  })
 }

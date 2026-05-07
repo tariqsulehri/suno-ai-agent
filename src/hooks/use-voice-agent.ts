@@ -226,26 +226,38 @@ export function useVoiceAgent({
         if (event.done) {
           const fullText = String(event.fullText ?? '')
           const endCall  = Boolean(event.endCall)
+          historyRef.current.push({ role: 'assistant', content: fullText })
+
+          if (endCall) {
+            await saveCallSummary(dispatchFn)
+          }
+
           dispatchFn?.({ type: 'REPLY_COMPLETE', fullText, endCall })
           if (outputModeRef.current === 'text' && !endCall) dispatchFn?.({ type: 'SPEAKING_DONE' })
-          historyRef.current.push({ role: 'assistant', content: fullText })
-          if (endCall) {
-            const lead   = leadRef.current
-            const review = reviewRef.current
-            fetch('/api/summarize', {
-              method:  'POST',
-              headers: { 'Content-Type': 'application/json', ...embedHeadersRef.current },
-              body:    JSON.stringify({ messages: historyRef.current, lead, review }),
-            })
-              .then((r) => r.json())
-              .then((data: CallSummary) => {
-                dispatchFn?.({ type: 'CALL_SUMMARY', summary: data })
-                console.log('[Call Report]', JSON.stringify({ lead, review, ...data }, null, 2))
-              })
-              .catch((err) => console.error('[summarize]', err))
-          }
         }
       }
+    }
+  }
+
+  async function saveCallSummary(dispatchFn: typeof dispatch | null) {
+    const lead   = leadRef.current
+    const review = reviewRef.current
+
+    try {
+      const res = await fetch('/api/summarize', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', ...embedHeadersRef.current },
+        body:    JSON.stringify({ messages: historyRef.current, lead, review }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(String(data?.error ?? 'Call save failed'))
+
+      dispatchFn?.({ type: 'CALL_SUMMARY', summary: data as CallSummary })
+      console.log('[Call Report]', JSON.stringify({ lead, review, ...data }, null, 2))
+    } catch (err) {
+      console.error('[summarize]', err)
+      dispatchFn?.({ type: 'ERROR', message: 'Call ended, but saving failed. Please retry before closing.' })
+      throw err
     }
   }
 
@@ -328,7 +340,6 @@ export function useVoiceAgent({
         if (!cancelled && cfg.language)    setLang(cfg.language === 'Auto' ? 'English' : cfg.language)
         if (!cancelled && cfg.agentName)   setAgent(cfg.agentName)
         if (!cancelled && cfg.companyName) setCompany(cfg.companyName)
-
         if (cfg.greeting && !cancelled) {
           const greetingText = cfg.greeting as string
           dispatch({ type: 'REPLY_COMPLETE', fullText: greetingText, endCall: false })
@@ -338,7 +349,6 @@ export function useVoiceAgent({
         } else {
           await streamChat([{ role: 'user', content: '__GREET__' }], cancelled ? null : dispatch)
         }
-        if (!cancelled) dispatch({ type: 'CONNECTED' })
       } catch (err) {
         if (!cancelled) dispatch({ type: 'ERROR', message: String(err) })
       }

@@ -17,6 +17,15 @@ model Shop {
   branchCode String?
   createdAt  DateTime @default(now())
 
+  // Extended location fields
+  state      String?   // Province/State
+  town       String?   // Town/Area within city
+  phone      String?
+  mobile     String?
+  email      String?
+  lat        Float?
+  lng        Float?
+
   reviews Review[]
 }
 

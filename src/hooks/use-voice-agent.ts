@@ -124,6 +124,7 @@ export interface UseVoiceAgentReturn {
   pressMic:     () => void
   releaseMic:   () => void
   sendText:     (text: string) => void
+  endCall:      () => void
 }
 
 // ── Hook ───────────────────────────────────────────────────────────────────────
@@ -144,6 +145,10 @@ export function useVoiceAgent({
   const [outputMode, setOutputModeState] = useState<'voice' | 'text'>(defaultOutputMode)
   const [embedHeaders, setEmbedHeaders]  = useState<Record<string, string>>({})
   const embedHeadersRef = useRef<Record<string, string>>({})
+
+  // Single abort controller for all in-flight network requests.
+  // Aborted on unmount and replaced before each new chat stream.
+  const networkAbortRef = useRef(new AbortController())
 
   const voiceRef = useRef<OpenAIVoice>('nova')
   const handleSetVoice = useCallback((v: OpenAIVoice) => {
@@ -182,60 +187,91 @@ export function useVoiceAgent({
   // Use the right player based on flag
   const { isPlaying, enqueue, stopAll } = browserTts ? browserPlayer : apiPlayer
 
+  // Ref-tracked playing state so streamChat can read it synchronously inside async callbacks.
+  // Updated on every render — always reflects latest isPlaying without stale closure.
+  const isPlayingRef = useRef(false)
+  isPlayingRef.current = isPlaying
+
   // ── SSE chat stream ───────────────────────────────────────────────────────────
   async function streamChat(messages: ChatHistory, dispatchFn: typeof dispatch | null) {
-    const res = await fetch('/api/chat', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json', ...embedHeadersRef.current },
-      body:    JSON.stringify({ messages }),
-    })
+    // Cancel any previous stream and arm a fresh signal for this one.
+    networkAbortRef.current.abort()
+    networkAbortRef.current = new AbortController()
+    const { signal } = networkAbortRef.current
 
-    if (!res.body) throw new Error('No response body from /api/chat')
+    try {
+      const res = await fetch('/api/chat', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', ...embedHeadersRef.current },
+        body:    JSON.stringify({ messages }),
+        signal,
+      })
 
-    const reader     = res.body.getReader()
-    const decoder    = new TextDecoder()
-    let   lineBuffer = ''
+      if (!res.body) throw new Error('No response body from /api/chat')
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
+      const reader     = res.body.getReader()
+      const decoder    = new TextDecoder()
+      let   lineBuffer = ''
+      let   receivedDone = false
 
-      lineBuffer += decoder.decode(value, { stream: true })
-      const parts = lineBuffer.split('\n\n')
-      lineBuffer  = parts.pop() ?? ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done || signal.aborted) break
 
-      for (const part of parts) {
-        if (!part.startsWith('data: ')) continue
-        let event: Record<string, unknown>
-        try { event = JSON.parse(part.slice(6)) } catch { continue }
+        lineBuffer += decoder.decode(value, { stream: true })
+        const parts = lineBuffer.split('\n\n')
+        lineBuffer  = parts.pop() ?? ''
 
-        if (event.error) {
-          dispatchFn?.({ type: 'ERROR', message: String(event.error) })
-          return
-        }
-        if (event.token)    dispatchFn?.({ type: 'STREAM_TOKEN', token: String(event.token) })
-        if (event.sentence) { if (outputModeRef.current === 'voice') enqueue(String(event.sentence)) }
-        if (event.lead) {
-          leadRef.current = { ...leadRef.current, ...(event.lead as LeadData) }
-          dispatchFn?.({ type: 'LEAD_UPDATE', lead: event.lead as LeadData })
-        }
-        if (event.review) {
-          reviewRef.current = { ...reviewRef.current, ...(event.review as ReviewData) }
-          dispatchFn?.({ type: 'REVIEW_UPDATE', review: event.review as ReviewData })
-        }
-        if (event.done) {
-          const fullText = String(event.fullText ?? '')
-          const endCall  = Boolean(event.endCall)
-          historyRef.current.push({ role: 'assistant', content: fullText })
+        for (const part of parts) {
+          if (!part.startsWith('data: ')) continue
+          let event: Record<string, unknown>
+          try { event = JSON.parse(part.slice(6)) } catch { continue }
 
-          if (endCall) {
-            await saveCallSummary(dispatchFn)
+          if (event.error) {
+            dispatchFn?.({ type: 'ERROR', message: String(event.error) })
+            return
           }
+          if (event.token)    dispatchFn?.({ type: 'STREAM_TOKEN', token: String(event.token) })
+          if (event.sentence) { if (outputModeRef.current === 'voice') enqueue(String(event.sentence)) }
+          if (event.lead) {
+            leadRef.current = { ...leadRef.current, ...(event.lead as LeadData) }
+            dispatchFn?.({ type: 'LEAD_UPDATE', lead: event.lead as LeadData })
+          }
+          if (event.review) {
+            reviewRef.current = { ...reviewRef.current, ...(event.review as ReviewData) }
+            dispatchFn?.({ type: 'REVIEW_UPDATE', review: event.review as ReviewData })
+          }
+          if (event.done) {
+            receivedDone = true
+            const fullText = String(event.fullText ?? '')
+            const endCall  = Boolean(event.endCall)
+            historyRef.current.push({ role: 'assistant', content: fullText })
 
-          dispatchFn?.({ type: 'REPLY_COMPLETE', fullText, endCall })
-          if (outputModeRef.current === 'text' && !endCall) dispatchFn?.({ type: 'SPEAKING_DONE' })
+            if (endCall) {
+              await saveCallSummary(dispatchFn)
+            }
+
+            dispatchFn?.({ type: 'REPLY_COMPLETE', fullText, endCall })
+
+            if (outputModeRef.current === 'text' && !endCall) {
+              dispatchFn?.({ type: 'SPEAKING_DONE' })
+            } else if (outputModeRef.current === 'voice' && !endCall && !isPlayingRef.current) {
+              // Race condition guard: audio already finished before this done event arrived.
+              // onPlaybackEnd already fired (phase was not 'speaking' then), so we must
+              // dispatch SPEAKING_DONE here or the phase will be stuck at 'speaking'.
+              dispatchFn?.({ type: 'SPEAKING_DONE' })
+            }
+          }
         }
       }
+
+      // Stream closed without a done event — unblock the UI so the user can retry
+      if (!receivedDone && !signal.aborted) {
+        dispatchFn?.({ type: 'ERROR', message: 'Response incomplete — please try again.' })
+      }
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return
+      dispatchFn?.({ type: 'ERROR', message: String(err) })
     }
   }
 
@@ -248,6 +284,7 @@ export function useVoiceAgent({
         method:  'POST',
         headers: { 'Content-Type': 'application/json', ...embedHeadersRef.current },
         body:    JSON.stringify({ messages: historyRef.current, lead, review }),
+        signal:  networkAbortRef.current.signal,
       })
       const data = await res.json()
       if (!res.ok) throw new Error(String(data?.error ?? 'Call save failed'))
@@ -255,9 +292,9 @@ export function useVoiceAgent({
       dispatchFn?.({ type: 'CALL_SUMMARY', summary: data as CallSummary })
       console.log('[Call Report]', JSON.stringify({ lead, review, ...data }, null, 2))
     } catch (err) {
+      if ((err as Error).name === 'AbortError') return
       console.error('[summarize]', err)
       dispatchFn?.({ type: 'ERROR', message: 'Call ended, but saving failed. Please retry before closing.' })
-      throw err
     }
   }
 
@@ -297,10 +334,12 @@ export function useVoiceAgent({
     try {
       const res  = await fetch('/api/transcribe', {
         method: 'POST', headers: embedHeadersRef.current, body: form,
+        signal: networkAbortRef.current.signal,
       })
       const data = await res.json()
       userText   = data.text ?? ''
-    } catch {
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return
       dispatch({ type: 'ERROR', message: 'Transcription failed. Please try again.' })
       return
     }
@@ -330,11 +369,16 @@ export function useVoiceAgent({
     embedHeadersRef.current = headers
     setEmbedHeaders(headers)
 
+    // Always create a fresh controller on mount so a previously-aborted signal
+    // (e.g. from React Strict Mode double-invoke cleanup) never blocks the boot fetch.
+    const bootController = new AbortController()
+    networkAbortRef.current = bootController
+
     let cancelled = false
 
     async function boot() {
       try {
-        const cfg = await fetch('/api/config', { headers }).then((r) => r.json())
+        const cfg = await fetch('/api/config', { headers, signal: bootController.signal }).then((r) => r.json())
         if (!cancelled && cfg.voice)       handleSetVoice(cfg.voice as OpenAIVoice)
         // 'Auto' means the tenant supports multiple languages — default mic to English
         if (!cancelled && cfg.language)    setLang(cfg.language === 'Auto' ? 'English' : cfg.language)
@@ -350,12 +394,16 @@ export function useVoiceAgent({
           await streamChat([{ role: 'user', content: '__GREET__' }], cancelled ? null : dispatch)
         }
       } catch (err) {
+        if ((err as Error).name === 'AbortError') return
         if (!cancelled) dispatch({ type: 'ERROR', message: String(err) })
       }
     }
 
     boot()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      bootController.abort()
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -397,6 +445,22 @@ export function useVoiceAgent({
     stopRec()
   }, [isRecording, stopRec])
 
+  // ── Manual end-call ───────────────────────────────────────────────────────────
+  // Stops mic + playback, aborts any in-flight request, transitions to 'ended'
+  // phase immediately, then saves the call summary in the background.
+  const endCall = useCallback(() => {
+    if (isRecording) stopRec()
+    stopAll()
+    networkAbortRef.current.abort()
+    dispatch({ type: 'REPLY_COMPLETE', fullText: '', endCall: true })
+    if (historyRef.current.length > 0) {
+      networkAbortRef.current = new AbortController()
+      saveCallSummary(dispatch)
+    }
+  // saveCallSummary only touches refs — any captured version works the same
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRecording, stopRec, stopAll])
+
   return {
     phase:              state.phase,
     transcript:         state.transcript,
@@ -423,5 +487,6 @@ export function useVoiceAgent({
     pressMic,
     releaseMic,
     sendText,
+    endCall,
   }
 }

@@ -1,13 +1,13 @@
 import { isEmbedAuthEnabled, validateEmbedQuery } from '@/lib/security/embed-auth'
 import { VoiceAgentWidget } from '@/components/voice-agent/widget'
 import { NexusAgent }       from '@/components/voice-agent/nexus-agent'
-import { ThemeProvider, type ThemeColors } from '@/components/voice-agent/theme-provider'
+import { ThemeProvider, type ThemeColors, type VoiceThemeName } from '@/components/voice-agent/theme-provider'
+import { hexToChannels, darken, lighten } from '@/lib/utils/color'
+import type { CSSProperties } from 'react'
 
 interface VoicePageProps {
   searchParams?: Promise<Record<string, string | string[] | undefined>>
 }
-
-// ── Theme helpers (server-side, no browser APIs) ──────────────────────────────
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/
 
@@ -15,21 +15,10 @@ function isHex(v: unknown): v is string {
   return typeof v === 'string' && HEX_RE.test(v)
 }
 
-function hexToChannels(hex: string): string {
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
-  return `${r} ${g} ${b}`
-}
+const THEMES: VoiceThemeName[] = ['nexus', 'daylight', 'emerald', 'ember']
 
-function darken(hex: string, f = 0.12): string {
-  const ch = (s: string) => Math.round(Math.max(0, parseInt(s, 16) * (1 - f))).toString(16).padStart(2, '0')
-  return `#${ch(hex.slice(1, 3))}${ch(hex.slice(3, 5))}${ch(hex.slice(5, 7))}`
-}
-
-function lighten(hex: string, f = 0.92): string {
-  const ch = (s: string) => Math.round(parseInt(s, 16) + (255 - parseInt(s, 16)) * f).toString(16).padStart(2, '0')
-  return `#${ch(hex.slice(1, 3))}${ch(hex.slice(3, 5))}${ch(hex.slice(5, 7))}`
+function isThemeName(value: unknown): value is VoiceThemeName {
+  return typeof value === 'string' && THEMES.includes(value as VoiceThemeName)
 }
 
 function buildThemeStyle(primary: string, dk: string, lt: string, md: string): string {
@@ -38,7 +27,9 @@ function buildThemeStyle(primary: string, dk: string, lt: string, md: string): s
     `--va-primary:${hexToChannels(primary)};` +
     `--va-primary-dk:${hexToChannels(dk)};` +
     `--va-primary-lt:${hexToChannels(lt)};` +
-    `--va-primary-md:${hexToChannels(md)}` +
+    `--va-primary-md:${hexToChannels(md)};` +
+    `--nx-accent:${primary};` +
+    `--nx-accent-rgb:${hexToChannels(primary)}` +
     `}`
   )
 }
@@ -53,6 +44,7 @@ export default async function VoicePage({ searchParams }: VoicePageProps) {
   const modeParam = typeof params.mode === 'string' ? params.mode : undefined
   const launcherParam = typeof params.launcher === 'string' ? params.launcher : undefined
   const marginParam = typeof params.margin === 'string' ? params.margin : undefined
+  const theme = isThemeName(params.theme) ? params.theme : 'daylight'
   const mode = modeParam === 'fullscreen' ? 'fullscreen'
              : modeParam === 'floating' || launcherParam === 'true' ? 'floating'
              : modeParam === 'inline' ? 'inline'
@@ -71,6 +63,9 @@ export default async function VoicePage({ searchParams }: VoicePageProps) {
 
   const initialTheme: ThemeColors | undefined = primary
     ? { primary, primaryDk: primaryDk ?? undefined, primaryLt: primaryLt ?? undefined, primaryMd: primaryMd ?? undefined }
+    : undefined
+  const mainStyle = primary
+    ? ({ '--nx-accent': primary, '--nx-accent-rgb': hexToChannels(primary) } as CSSProperties)
     : undefined
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -102,9 +97,9 @@ export default async function VoicePage({ searchParams }: VoicePageProps) {
       {themeStyle && <style dangerouslySetInnerHTML={{ __html: themeStyle }} />}
 
       {/* Listens for voice-agent:theme postMessage from the parent page */}
-      <ThemeProvider initial={initialTheme} />
+      <ThemeProvider initial={initialTheme} theme={theme} />
 
-      <main className="min-h-dvh bg-surface">
+      <main className="min-h-dvh bg-surface" data-va-theme={theme} style={mainStyle}>
         {mode === 'fullscreen' ? (
           <NexusAgent tenantId={tenantId} token={token} shopCode={shopCode} />
         ) : (

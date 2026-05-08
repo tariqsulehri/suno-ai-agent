@@ -1,7 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET() {
-    const baseUrl = "https://ai-support-agent-navy.vercel.app";
+export async function GET(req: NextRequest) {
+    // Derive base URL from the incoming request so this works in every
+    // environment (local dev, staging, production) without configuration.
+    const proto   = req.headers.get("x-forwarded-proto") ?? "https"
+    const host    = req.headers.get("host") ?? "localhost:3000"
+    const baseUrl = `${proto}://${host}`;
 
     const js = `
 (function () {
@@ -11,6 +15,7 @@ export async function GET() {
 
   const tenant = script.getAttribute("data-tenant");
   const token = script.getAttribute("data-token");
+  const theme = script.getAttribute("data-theme");
 
   if (!tenant || !token) {
     console.error("AI Agent: Missing tenant or token");
@@ -93,6 +98,7 @@ export async function GET() {
 
         const primaryColor = detectPrimaryColor();
         if (primaryColor) url.searchParams.set("primaryColor", primaryColor);
+        if (/^(nexus|daylight|emerald|ember)$/.test(theme || "")) url.searchParams.set("theme", theme);
 
         const iframe = document.createElement("iframe");
         iframe.src = url.toString();

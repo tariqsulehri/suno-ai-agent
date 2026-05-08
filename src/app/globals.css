@@ -8,16 +8,16 @@
   /* ── Primary brand color (RGB channels, no rgb() wrapper)
      Override via ?primaryColor=#hex on the /voice embed URL,
      or via postMessage { type: 'voice-agent:theme', colors: { primary: '#hex' } }
-     Defaults: amber #F9B01E */
-  --va-primary:    249 176 30;   /* #F9B01E */
-  --va-primary-dk: 223 160 26;   /* #DFA01A */
-  --va-primary-lt: 254 249 236;  /* #FEF9EC */
-  --va-primary-md: 253 240 200;  /* #FDF0C8 */
+     Defaults: professional blue #2563EB */
+  --va-primary:    37 99 235;    /* #2563EB */
+  --va-primary-dk: 29 78 216;    /* #1D4ED8 */
+  --va-primary-lt: 239 246 255;  /* #EFF6FF */
+  --va-primary-md: 219 234 254;  /* #DBEAFE */
 }
 
 html, body {
-  background-color: #F0F2F5;
-  color: #323130;
+  background-color: #F8FAFC;
+  color: #0F172A;
   min-height: 100dvh;
   font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont,
     'Inter', 'Helvetica Neue', Arial, sans-serif;
@@ -407,22 +407,6 @@ html, body {
   box-shadow: 0 0 10px rgba(0,212,255,0.15);
 }
 
-/* Send button */
-.fs-send-btn {
-  flex-shrink: 0;
-  width: 2.5rem; height: 2.5rem; border-radius: 0.6rem;
-  display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, #8B2500, #CC4400);
-  border: 1px solid rgba(255,107,53,0.4);
-  box-shadow: 0 0 14px rgba(200,70,10,0.35);
-  transition: all 0.2s;
-}
-.fs-send-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #AA3300, #FF5500);
-  box-shadow: 0 0 22px rgba(255,85,0,0.45);
-}
-.fs-send-btn:disabled { opacity: 0.25; cursor: not-allowed; }
-
 /* ── Glowing text box wrapper ────────────────────────────────────────────── */
 .fs-textbox-wrap {
   flex: 1; position: relative;
@@ -785,28 +769,22 @@ html, body {
   display: flex; flex-direction: column;
   align-items: center; gap: 1rem;
   text-align: center; max-width: 360px; width: 100%;
-  background: rgba(10,15,40,0.95);
-  border: 1px solid rgba(239,68,68,0.3);
+  background: var(--nx-surface, rgba(10,15,40,0.95));
+  border: 1px solid var(--nx-line, rgba(0,229,255,0.16));
   border-radius: 1.5rem; padding: 2.5rem 2rem;
-  box-shadow: 0 0 60px rgba(239,68,68,0.12), 0 20px 60px rgba(0,0,0,0.6);
+  box-shadow: var(--nx-shadow, 0 20px 60px rgba(0,0,0,0.6));
+  backdrop-filter: blur(var(--nx-glass-blur, 18px));
   animation: nx-ty-pop 0.4s cubic-bezier(0.34,1.56,0.64,1);
 }
 .nx-shop-icon { font-size: 2.8rem; }
 .nx-shop-title {
   font-size: 1.3rem; font-weight: 800;
-  color: #FCA5A5;
+  color: var(--nx-text-muted, #B8CCE8);
 }
 .nx-shop-body {
-  font-size: 0.85rem; color: rgba(148,163,184,0.85);
+  font-size: 0.85rem;
+  color: var(--nx-text-soft, rgba(148,163,184,0.85));
   line-height: 1.65;
-}
-.nx-shop-hint {
-  font-size: 0.75rem; color: rgba(100,116,139,0.7);
-}
-.nx-shop-hint code {
-  background: rgba(0,229,255,0.1);
-  color: #00E5FF; padding: 0.1rem 0.4rem;
-  border-radius: 0.3rem; font-size: 0.72rem;
 }
 
 /* ── Error / quota banner ─────────────────────────────────────────────────── */
@@ -878,9 +856,14 @@ html, body {
 /* ── Agent orb section ────────────────────────────────────────────────────── */
 .nx-orb-section {
   display: flex; flex-direction: column;
-  align-items: center; gap: 0.4rem;
+  align-items: center; gap: 0.5rem;
   padding: 0.4rem 0 0.55rem;
   flex-shrink: 0;
+}
+
+/* Avatar wrapper — gives bottom clearance so the hex rings don't cover the name */
+.nx-avatar-wrap {
+  margin-bottom: 2rem;
 }
 
 /* Orb wrapper */
@@ -940,17 +923,17 @@ html, body {
 /* Agent name + status */
 .nx-agent-name {
   font-size: 0.95rem; font-weight: 700;
-  color: #B8CCE8; letter-spacing: 0.07em; text-transform: uppercase;
+  color: #CCDEED; letter-spacing: 0.07em; text-transform: uppercase;
 }
 .nx-status-txt {
-  font-size: 0.7rem; font-weight: 400;
-  color: rgba(148,163,184,0.75);
+  font-size: 0.7rem; font-weight: 500;
+  color: rgba(185, 205, 228, 0.90);
   letter-spacing: 0.04em; text-align: center;
 }
 
 /* Live interim transcript while user is speaking */
 .nx-live-txt {
-  max-width: 88%; text-align: center;
+  text-align: center;
   font-size: 0.75rem; font-style: italic; line-height: 1.5;
   padding: 0.3rem 0.8rem; border-radius: 0.6rem;
   border: 1px solid;
@@ -992,17 +975,17 @@ html, body {
 .nx-transcript::-webkit-scrollbar       { width: 3px; }
 .nx-transcript::-webkit-scrollbar-track { background: transparent; }
 .nx-transcript::-webkit-scrollbar-thumb {
-  background: rgba(0,229,255,0.15); border-radius: 999px;
+  background: rgba(0,229,255,0.32); border-radius: 999px;
 }
 
 /* Empty state */
 .nx-empty {
   flex: 1; display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  gap: 0.4rem; padding: 2rem; opacity: 0.42; text-align: center;
+  gap: 0.4rem; padding: 2rem; opacity: 0.72; text-align: center;
 }
-.nx-empty-t { font-size: 0.88rem; font-weight: 600; color: #94A3B8; }
-.nx-empty-s { font-size: 0.72rem; color: #64748B; }
+.nx-empty-t { font-size: 0.88rem; font-weight: 600; color: #A8C0D8; }
+.nx-empty-s { font-size: 0.72rem; color: #7A9AB8; }
 
 /* Bubbles */
 .nx-row   { display: flex; margin-top: 2px; }
@@ -1018,16 +1001,16 @@ html, body {
   animation: fade-up 0.22s ease-out;
 }
 .nx-bbl-a {
-  background: rgba(8,12,35,0.92);
-  border: 1px solid rgba(0,229,255,0.09);
-  color: #C4D4EE;
+  background: rgba(14, 22, 58, 0.96);
+  border: 1px solid rgba(0,229,255,0.22);
+  color: #D8E8F8;
   border-bottom-left-radius: 4px;
   backdrop-filter: blur(10px);
 }
 .nx-bbl-u {
-  background: linear-gradient(135deg, rgba(25,15,65,0.95), rgba(12,8,40,0.95));
-  border: 1px solid;
-  color: #C5D8F5;
+  background: linear-gradient(135deg, rgba(35,20,85,0.97), rgba(18,10,55,0.97));
+  border: 1px solid rgba(0,229,255,0.28);
+  color: #DCE8FA;
   border-bottom-right-radius: 4px;
   backdrop-filter: blur(10px);
 }
@@ -1070,16 +1053,16 @@ html, body {
 /* Sci-fi expanding wave rings (recording) */
 .nx-wr {
   position: absolute; border-radius: 50%;
-  border: 1.5px solid;
-  animation: nx-wring 2.2s ease-out infinite;
+  border: 2px solid;
+  animation: nx-wring 2.0s ease-out infinite;
   pointer-events: none;
 }
-.nx-wr1 { inset: -2px;  animation-delay: 0s;    opacity: 0.75; }
-.nx-wr2 { inset: -18px; animation-delay: 0.55s; opacity: 0.50; }
-.nx-wr3 { inset: -34px; animation-delay: 1.1s;  opacity: 0.28; }
+.nx-wr1 { inset: -2px;  animation-delay: 0s;    opacity: 0.90; }
+.nx-wr2 { inset: -20px; animation-delay: 0.55s; opacity: 0.65; }
+.nx-wr3 { inset: -38px; animation-delay: 1.1s;  opacity: 0.38; }
 @keyframes nx-wring {
-  0%   { transform: scale(0.96); opacity: inherit; }
-  100% { transform: scale(1.7);  opacity: 0; }
+  0%   { transform: scale(0.95); opacity: inherit; }
+  100% { transform: scale(1.80); opacity: 0; }
 }
 
 /* Countdown arc SVG */
@@ -1098,50 +1081,60 @@ html, body {
   width: 120px; height: 120px;
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  border: none; cursor: pointer;
+  border: 2px solid rgba(255,255,255,0.18);
+  cursor: pointer;
   transition: transform 0.22s ease, box-shadow 0.22s ease;
   -webkit-tap-highlight-color: transparent;
 }
+
+/* Idle — full solid accent gradient, obvious ring + glow */
 .nx-btn-idle {
-  background: linear-gradient(145deg, #0C1848, #18106A);
+  background:
+    radial-gradient(circle at 38% 28%, rgba(255,255,255,0.28), transparent 32%),
+    linear-gradient(145deg, #00CCEE 0%, #0A12B8 100%);
   box-shadow:
-    0 0 0 2px rgba(0,229,255,0.22),
-    0 0 32px rgba(0,229,255,0.1),
-    0 10px 36px rgba(0,0,0,0.55),
-    inset 0 1px 0 rgba(255,255,255,0.06);
+    0 0 0 3px rgba(0,229,255,0.70),
+    0 0 0 8px rgba(0,229,255,0.18),
+    0 8px 40px rgba(0,229,255,0.55),
+    0 20px 56px rgba(0,0,0,0.70),
+    inset 0 1px 0 rgba(255,255,255,0.30);
 }
 .nx-btn-idle:hover:not(:disabled) {
-  transform: scale(1.06);
+  transform: scale(1.08);
   box-shadow:
-    0 0 0 2px rgba(0,229,255,0.5),
-    0 0 55px rgba(0,229,255,0.22),
-    0 14px 44px rgba(0,0,0,0.65),
-    inset 0 1px 0 rgba(255,255,255,0.08);
+    0 0 0 4px rgba(0,229,255,0.90),
+    0 0 0 12px rgba(0,229,255,0.24),
+    0 14px 54px rgba(0,229,255,0.68),
+    0 24px 64px rgba(0,0,0,0.76),
+    inset 0 1px 0 rgba(255,255,255,0.36);
 }
-.nx-btn-idle:active:not(:disabled) { transform: scale(0.97); }
+.nx-btn-idle:active:not(:disabled) { transform: scale(0.95); }
 
+/* Recording — breathes */
 .nx-btn-rec {
-  animation: nx-btn-breathe 1.6s ease-in-out infinite;
+  animation: nx-btn-breathe 1.4s ease-in-out infinite;
 }
 @keyframes nx-btn-breathe {
   0%, 100% { transform: scale(1);    }
-  50%      { transform: scale(1.04); }
+  50%      { transform: scale(1.06); }
 }
 
+/* Busy (connecting / thinking) */
 .nx-btn-busy {
-  background: rgba(8,12,35,0.85);
-  box-shadow: 0 0 0 2px rgba(100,116,139,0.18);
-  cursor: not-allowed; opacity: 0.55;
+  background: rgba(12,18,50,0.90);
+  box-shadow: 0 0 0 2px rgba(100,130,160,0.35),
+              0 8px 28px rgba(0,0,0,0.45);
+  cursor: not-allowed; opacity: 0.72;
 }
 .nx-btn:disabled { cursor: not-allowed; }
 
 /* Icon inside button */
-.nx-bi { width: 40px; height: 40px; position: relative; z-index: 1; }
+.nx-bi { width: 42px; height: 42px; position: relative; z-index: 1; }
 
 /* Spinner (busy state) */
 .nx-spin {
-  width: 30px; height: 30px; border-radius: 50%;
-  border: 3px solid rgba(255,255,255,0.08);
+  width: 32px; height: 32px; border-radius: 50%;
+  border: 3px solid rgba(255,255,255,0.18);
   border-top-width: 3px;
   animation: nx-spinanim 0.8s linear infinite;
 }
@@ -1170,15 +1163,37 @@ html, body {
 .nx-countdown-sub {
   font-size: 0.58rem; font-weight: 600;
   letter-spacing: 0.12em; text-transform: uppercase;
-  opacity: 0.65;
+  opacity: 0.82;
 }
 
 /* Button label text */
 .nx-btn-lbl {
   font-size: 0.8rem; font-weight: 500;
-  color: rgba(148,163,184,0.75);
+  color: rgba(185, 205, 228, 0.90);
   text-align: center; letter-spacing: 0.02em;
 }
+
+/* ── End Call button ──────────────────────────────────────────────────────── */
+.nx-end-btn {
+  display: flex; align-items: center; gap: 0.38rem;
+  padding: 0.32rem 1.05rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 80, 80, 0.30);
+  background: rgba(255, 60, 60, 0.06);
+  color: rgba(255, 130, 130, 0.72);
+  font-size: 0.72rem; font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: border-color 0.18s, background 0.18s, color 0.18s, transform 0.14s;
+  animation: fade-up 0.28s ease-out;
+  flex-shrink: 0;
+}
+.nx-end-btn:hover {
+  border-color: rgba(255, 55, 55, 0.70);
+  background: rgba(255, 55, 55, 0.13);
+  color: #FF6060;
+}
+.nx-end-btn:active { transform: scale(0.95); }
 
 /* ── End-state shared wrapper ─────────────────────────────────────────────── */
 .nx-end-screen {
@@ -1288,4 +1303,450 @@ html, body {
 .nx-reset-hint {
   font-size: 0.68rem; color: rgba(100,116,139,0.6);
   letter-spacing: 0.05em;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   NEXUS THEME SYSTEM
+   Supports ?theme=nexus|daylight|emerald|ember and ?primaryColor=#RRGGBB.
+   These rules intentionally sit after the original Nexus block.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --nx-accent: #00E5FF;
+  --nx-accent-rgb: 0 229 255;
+  --nx-accent-2: #7B6FFF;
+  --nx-accent-2-rgb: 123 111 255;
+  --nx-bg-0: #050816;
+  --nx-bg-1: #080E24;
+  --nx-bg-2: #101934;
+  --nx-surface: rgba(12, 18, 48, 0.85);
+  --nx-surface-strong: rgba(14, 20, 52, 0.96);
+  --nx-surface-soft: rgba(255, 255, 255, 0.06);
+  --nx-line: rgba(var(--nx-accent-rgb), 0.26);
+  --nx-line-strong: rgba(var(--nx-accent-rgb), 0.44);
+  --nx-text: #F0F6FF;
+  --nx-text-muted: rgba(205, 220, 242, 0.92);
+  --nx-text-soft: rgba(172, 192, 218, 0.84);
+  --nx-agent-bubble: rgba(14, 22, 58, 0.96);
+  --nx-user-bubble: rgba(var(--nx-accent-rgb), 0.20);
+  --nx-glass-blur: 18px;
+  --nx-shadow: 0 20px 70px rgba(0, 0, 0, 0.45);
+}
+
+[data-va-theme="daylight"] {
+  color-scheme: light;
+  --nx-accent: #1D55D9;
+  --nx-accent-rgb: 29 85 217;
+  --nx-accent-2: #0D6F68;
+  --nx-accent-2-rgb: 13 111 104;
+  --nx-bg-0: #F2F6FB;
+  --nx-bg-1: #E8EFF8;
+  --nx-bg-2: #DCE6F4;
+  --nx-surface: rgba(255, 255, 255, 0.92);
+  --nx-surface-strong: rgba(255, 255, 255, 0.98);
+  --nx-surface-soft: rgba(17, 24, 39, 0.06);
+  --nx-line: rgba(29, 85, 217, 0.24);
+  --nx-line-strong: rgba(29, 85, 217, 0.42);
+  --nx-text: #0F1E38;
+  --nx-text-muted: rgba(30, 48, 78, 0.88);
+  --nx-text-soft: rgba(48, 68, 98, 0.78);
+  --nx-agent-bubble: rgba(255, 255, 255, 0.97);
+  --nx-user-bubble: rgba(29, 85, 217, 0.12);
+  --nx-shadow: 0 20px 60px rgba(29, 85, 217, 0.18);
+}
+
+[data-va-theme="emerald"] {
+  --nx-accent: #0FD090;
+  --nx-accent-rgb: 15 208 144;
+  --nx-accent-2: #22D4C2;
+  --nx-accent-2-rgb: 34 212 194;
+  --nx-bg-0: #020E0B;
+  --nx-bg-1: #051F18;
+  --nx-bg-2: #0A2E22;
+  --nx-surface: rgba(6, 32, 26, 0.88);
+  --nx-surface-strong: rgba(6, 30, 24, 0.97);
+  --nx-line: rgba(34, 212, 194, 0.28);
+  --nx-line-strong: rgba(34, 212, 194, 0.46);
+  --nx-text: #EDFFF8;
+  --nx-text-muted: rgba(198, 238, 226, 0.92);
+  --nx-text-soft: rgba(152, 200, 182, 0.84);
+  --nx-agent-bubble: rgba(5, 28, 22, 0.96);
+  --nx-user-bubble: rgba(15, 208, 144, 0.20);
+}
+
+[data-va-theme="ember"] {
+  --nx-accent: #FF7A1A;
+  --nx-accent-rgb: 255 122 26;
+  --nx-accent-2: #F6365A;
+  --nx-accent-2-rgb: 246 54 90;
+  --nx-bg-0: #130503;
+  --nx-bg-1: #240A06;
+  --nx-bg-2: #33100A;
+  --nx-surface: rgba(40, 14, 8, 0.90);
+  --nx-surface-strong: rgba(46, 16, 8, 0.97);
+  --nx-line: rgba(255, 122, 26, 0.28);
+  --nx-line-strong: rgba(255, 122, 26, 0.48);
+  --nx-text: #FFF5EE;
+  --nx-text-muted: rgba(252, 224, 200, 0.92);
+  --nx-text-soft: rgba(224, 176, 145, 0.85);
+  --nx-agent-bubble: rgba(38, 12, 6, 0.96);
+  --nx-user-bubble: rgba(255, 122, 26, 0.22);
+}
+
+.nx-root {
+  /* Hard-coded layer so the page is never transparent while CSS vars resolve */
+  background: linear-gradient(155deg, #050816 0%, #080E24 50%, #101934 100%);
+  background:
+    radial-gradient(circle at 18% 12%, rgba(var(--nx-accent-rgb, 0 229 255), 0.14), transparent 34%),
+    radial-gradient(circle at 82% 18%, rgba(var(--nx-accent-2-rgb, 123 111 255), 0.12), transparent 32%),
+    linear-gradient(155deg, var(--nx-bg-0, #050816) 0%, var(--nx-bg-1, #080E24) 50%, var(--nx-bg-2, #101934) 100%);
+  color: var(--nx-text, #E8F0FF);
+}
+
+.nx-content {
+  max-width: 680px;
+  padding: 0 clamp(0.9rem, 3.2vw, 1.35rem);
+}
+
+.nx-grid {
+  background-image:
+    linear-gradient(rgba(var(--nx-accent-rgb), 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--nx-accent-rgb), 0.035) 1px, transparent 1px);
+}
+
+.nx-b1 { background: radial-gradient(ellipse, rgba(var(--nx-accent-rgb, 0 229 255), 0.16), transparent 68%); }
+.nx-b2 { background: radial-gradient(ellipse, rgba(var(--nx-accent-2-rgb, 123 111 255), 0.13), transparent 68%); }
+.nx-b3 { background: radial-gradient(ellipse, rgba(var(--nx-accent-rgb, 0 229 255), 0.09), transparent 68%); }
+
+.nx-header {
+  margin-top: max(0.45rem, env(safe-area-inset-top));
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--nx-line, rgba(0 229 255 / 0.16));
+  border-radius: 1rem;
+  background: var(--nx-surface, rgba(8,12,32,0.72));
+  box-shadow: var(--nx-shadow, 0 20px 70px rgba(0,0,0,0.34));
+  backdrop-filter: blur(var(--nx-glass-blur, 18px));
+}
+
+.nx-live-dot {
+  background: var(--nx-accent);
+  box-shadow: 0 0 8px var(--nx-accent), 0 0 20px rgba(var(--nx-accent-rgb), 0.36);
+}
+
+.nx-company {
+  max-width: min(52vw, 360px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: linear-gradient(130deg, var(--nx-accent), var(--nx-accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.nx-lang-toggle {
+  background: var(--nx-surface-soft);
+  border-color: var(--nx-line);
+}
+
+.nx-lang-btn {
+  color: var(--nx-text-soft);
+}
+
+.nx-lang-btn:hover:not(:disabled) { color: var(--nx-text-muted); }
+
+.nx-lang-active {
+  background: rgba(var(--nx-accent-rgb), 0.14);
+  color: var(--nx-accent) !important;
+  box-shadow: 0 0 10px rgba(var(--nx-accent-rgb), 0.16);
+}
+
+.nx-orb-section {
+  /* enough top padding so the outer hex ring (32 px overflow) clears the header */
+  padding-top: clamp(2.2rem, 4vh, 3rem);
+}
+
+.nx-agent-name {
+  color: var(--nx-text);
+}
+
+.nx-status-txt,
+.nx-btn-lbl,
+.nx-reset-hint {
+  color: var(--nx-text-soft);
+}
+
+.nx-live-txt {
+  background: var(--nx-surface);
+  backdrop-filter: blur(var(--nx-glass-blur));
+}
+
+.nx-transcript {
+  margin: 0.35rem 0 0;
+  padding: 0.65rem 0.2rem 0.35rem;
+}
+
+.nx-transcript::-webkit-scrollbar-thumb {
+  background: rgba(var(--nx-accent-rgb), 0.22);
+}
+
+.nx-empty-t { color: var(--nx-text-muted); }
+.nx-empty-s { color: var(--nx-text-soft); }
+
+.nx-bubble {
+  border-radius: 1rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.14);
+}
+
+.nx-bbl-a {
+  background: var(--nx-agent-bubble, rgba(9,15,35,0.86));
+  border-color: var(--nx-line, rgba(0 229 255 / 0.16));
+  color: var(--nx-text, #E8F0FF);
+}
+
+.nx-bbl-u {
+  background:
+    linear-gradient(135deg, rgba(var(--nx-accent-rgb, 0 229 255), 0.22), rgba(var(--nx-accent-2-rgb, 123 111 255), 0.13)),
+    var(--nx-user-bubble, rgba(0 229 255 / 0.15));
+  color: var(--nx-text, #E8F0FF);
+}
+
+.nx-chip {
+  background: rgba(16,185,129,0.12);
+  border-color: rgba(16,185,129,0.28);
+}
+
+.nx-btn-wrap {
+  width: 128px;
+  height: 128px;
+}
+
+.nx-btn {
+  width: 112px;
+  height: 112px;
+}
+
+.nx-btn-idle {
+  background:
+    radial-gradient(circle at 38% 28%, rgba(255,255,255,0.28), transparent 32%),
+    linear-gradient(145deg, var(--nx-accent, #00E5FF) 0%, var(--nx-accent-2, #0A12B8) 100%);
+  box-shadow:
+    0 0 0 3px rgba(var(--nx-accent-rgb, 0 229 255), 0.72),
+    0 0 0 8px rgba(var(--nx-accent-rgb, 0 229 255), 0.20),
+    0 8px 40px rgba(var(--nx-accent-rgb, 0 229 255), 0.58),
+    0 20px 56px rgba(0,0,0,0.68),
+    inset 0 1px 0 rgba(255,255,255,0.30);
+}
+
+.nx-btn-idle:hover:not(:disabled) {
+  transform: scale(1.08);
+  box-shadow:
+    0 0 0 4px rgba(var(--nx-accent-rgb, 0 229 255), 0.92),
+    0 0 0 12px rgba(var(--nx-accent-rgb, 0 229 255), 0.26),
+    0 14px 54px rgba(var(--nx-accent-rgb, 0 229 255), 0.70),
+    0 24px 64px rgba(0,0,0,0.76),
+    inset 0 1px 0 rgba(255,255,255,0.36);
+}
+
+.nx-btn-busy {
+  background: var(--nx-surface-strong);
+  box-shadow: 0 0 0 2px var(--nx-line-strong),
+              0 8px 28px rgba(0,0,0,0.45);
+  opacity: 0.72;
+}
+
+.nx-countdown-badge {
+  background: var(--nx-surface);
+  backdrop-filter: blur(var(--nx-glass-blur));
+}
+
+.nx-end-screen {
+  background:
+    radial-gradient(circle at 50% 18%, rgba(var(--nx-accent-rgb), 0.14), transparent 36%),
+    linear-gradient(155deg, var(--nx-bg-0), var(--nx-bg-1));
+  color: var(--nx-text);
+}
+
+.nx-send-title,
+.nx-conf-msg {
+  color: var(--nx-text);
+}
+
+.nx-conf-sub,
+.nx-ty-phone {
+  color: var(--nx-text-soft);
+}
+
+.nx-conf-card,
+.nx-shop-card {
+  background: var(--nx-surface);
+  border: 1px solid var(--nx-line);
+  border-radius: 1.25rem;
+  padding: 1.4rem;
+  box-shadow: var(--nx-shadow);
+  backdrop-filter: blur(var(--nx-glass-blur));
+}
+
+.nx-new-btn:hover {
+  background: rgba(var(--nx-accent-rgb), 0.08);
+}
+
+@media (max-width: 480px) {
+  .nx-content {
+    padding: 0 0.85rem;
+  }
+
+  .nx-header {
+    border-radius: 0.85rem;
+  }
+
+  .nx-company {
+    max-width: 46vw;
+    font-size: 0.86rem;
+  }
+
+  .nx-bubble {
+    max-width: 86%;
+    font-size: 0.82rem;
+  }
+
+  .nx-btn-wrap {
+    width: 116px;
+    height: 116px;
+  }
+
+  .nx-btn {
+    width: 102px;
+    height: 102px;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   THEME PICKER
+   Four circular swatches in the header — inline theme switcher.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+.nx-theme-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nx-theme-dot {
+  width: 13px; height: 13px;
+  border-radius: 50%;
+  border: none; padding: 0;
+  cursor: pointer; flex-shrink: 0;
+  transition: transform 0.15s ease, outline-color 0.15s ease;
+  outline: 2px solid transparent;
+  outline-offset: 3px;
+}
+
+.nx-theme-dot:hover { transform: scale(1.35); }
+
+.nx-theme-dot-active {
+  outline-color: var(--nx-text, #E4EEFF);
+  transform: scale(1.15);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   LIGHT THEME ADJUSTMENTS — Daylight
+   Tone down elements that are designed for dark backgrounds.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+[data-va-theme="daylight"] .nx-root {
+  color: var(--nx-text);
+}
+
+/* Reduce robot icon visibility on light backgrounds */
+[data-va-theme="daylight"] .nx-robot-bg {
+  filter: grayscale(1) opacity(0.04);
+}
+
+/* Lighten the grid lines for a light surface */
+[data-va-theme="daylight"] .nx-grid {
+  background-image:
+    linear-gradient(rgba(37,99,235,0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(37,99,235,0.07) 1px, transparent 1px);
+}
+
+/* Transcript bubbles on light theme need stronger contrast */
+[data-va-theme="daylight"] .nx-bbl-a {
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+
+[data-va-theme="daylight"] .nx-bbl-u {
+  box-shadow: 0 2px 12px rgba(37,99,235,0.1);
+}
+
+/* Live transcript on light theme */
+[data-va-theme="daylight"] .nx-live-txt {
+  background: rgba(255,255,255,0.7);
+}
+
+/* Countdown badge on light theme */
+[data-va-theme="daylight"] .nx-countdown-badge {
+  background: rgba(255,255,255,0.7);
+}
+
+/* Theme dot active state on daylight uses a dark outline */
+[data-va-theme="daylight"] .nx-theme-dot-active {
+  outline-color: #172033;
+}
+
+/* ── Daylight button: white button on white bg = invisible — fix it ─────────
+   The base button border is rgba(white,0.18) — pointless on a light surface.
+   The busy button's surface-strong is rgba(255,255,255,0.98) — identical to
+   the page background.  Override everything that makes the button invisible.  */
+
+[data-va-theme="daylight"] .nx-btn {
+  /* Blue rim instead of the translucent-white one */
+  border-color: rgba(29, 85, 217, 0.30);
+}
+
+[data-va-theme="daylight"] .nx-btn-busy {
+  background: rgba(241, 245, 255, 0.96);
+  box-shadow:
+    0 0 0 2.5px rgba(29, 85, 217, 0.55),
+    0 0 0 7px  rgba(29, 85, 217, 0.10),
+    0 8px 28px rgba(29, 85, 217, 0.22);
+  opacity: 1;
+}
+
+/* Spinner track and head on daylight */
+[data-va-theme="daylight"] .nx-spin {
+  border-color: rgba(29, 85, 217, 0.18);
+  border-top-color: #1D55D9;
+}
+
+/* Idle button on daylight: accent gradient is blue→teal which works,
+   but the white border rim is invisible — already overridden above.
+   Boost the outer glow ring opacity slightly. */
+[data-va-theme="daylight"] .nx-btn-idle {
+  box-shadow:
+    0 0 0 3px  rgba(29, 85, 217, 0.80),
+    0 0 0 9px  rgba(29, 85, 217, 0.18),
+    0 8px 36px rgba(29, 85, 217, 0.45),
+    0 18px 52px rgba(0, 0, 0, 0.14),
+    inset 0 1px 0 rgba(255,255,255,0.40);
+}
+
+[data-va-theme="daylight"] .nx-btn-idle:hover:not(:disabled) {
+  box-shadow:
+    0 0 0 4px  rgba(29, 85, 217, 0.95),
+    0 0 0 12px rgba(29, 85, 217, 0.22),
+    0 12px 48px rgba(29, 85, 217, 0.55),
+    0 22px 60px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255,255,255,0.48);
+}
+
+/* End Call button on daylight — red shifts to a darker, more saturated tone */
+[data-va-theme="daylight"] .nx-end-btn {
+  border-color: rgba(200, 30, 30, 0.35);
+  background: rgba(200, 30, 30, 0.06);
+  color: rgba(185, 20, 20, 0.75);
+}
+[data-va-theme="daylight"] .nx-end-btn:hover {
+  border-color: rgba(200, 30, 30, 0.70);
+  background: rgba(200, 30, 30, 0.10);
+  color: #C01E1E;
 }

@@ -4,6 +4,7 @@ import { useRef, useEffect, useState, useCallback } from 'react'
 import { useVoiceAgent } from '@/hooks/use-voice-agent'
 import { AnimatedAvatar } from './avatar'
 import type { Phase } from '@/types'
+import type { VoiceThemeName } from './theme-provider'
 
 // ── End-state messages per sentiment ──────────────────────────────────────────
 const END_MSG: Record<string, string> = {
@@ -30,6 +31,23 @@ const MOOD_LABEL: Record<string, string> = {
   suggestion: '💡 Suggestion',
 }
 
+// ── Theme system ───────────────────────────────────────────────────────────────
+const THEMES: VoiceThemeName[] = ['nexus', 'daylight', 'emerald', 'ember']
+
+const THEME_ACCENTS: Record<VoiceThemeName, string> = {
+  nexus:    '#00E5FF',
+  daylight: '#2563EB',
+  emerald:  '#10B981',
+  ember:    '#F97316',
+}
+
+const THEME_LABELS: Record<VoiceThemeName, string> = {
+  nexus:    'Nexus',
+  daylight: 'Daylight',
+  emerald:  'Emerald',
+  ember:    'Ember',
+}
+
 // ── Status copy ────────────────────────────────────────────────────────────────
 const STATUS: Record<Phase, string> = {
   connecting:   'Connecting to agent…',
@@ -42,36 +60,77 @@ const STATUS: Record<Phase, string> = {
   error:        'Connection error — please retry',
 }
 
-// ── Main component ─────────────────────────────────────────────────────────────
-const VALID_SHOPS = ['shop1', 'shop2', 'shop3', 'shop4']
-
+// ── Public interface ───────────────────────────────────────────────────────────
 interface Props { tenantId?: string; token?: string; shopCode?: string }
 
-export function NexusAgent({ tenantId, token, shopCode }: Props) {
-  // All hooks must run unconditionally — shop guard is a conditional render below
+// Session wrapper — remounts NexusAgentInner on reset to avoid a full page reload.
+export function NexusAgent(props: Props) {
+  const [sessionKey, setSessionKey] = useState(0)
+  const handleReset = useCallback(() => setSessionKey(k => k + 1), [])
+  return <NexusAgentInner key={sessionKey} {...props} onReset={handleReset} />
+}
+
+// ── Inner component ────────────────────────────────────────────────────────────
+const VALID_SHOPS = ['shop1', 'shop2', 'shop3', 'shop4']
+
+function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onReset: () => void }) {
   const validShop = !!(shopCode && VALID_SHOPS.includes(shopCode.toLowerCase()))
 
   const {
     phase, transcript, partialReply, error,
     isRecording,
-    setOutputMode,
     agentName, companyName,
     language, setLanguage,
     reviewData, leadData,
     liveTranscript, webSpeechSupported,
-    toggleMic,
+    toggleMic, endCall,
   } = useVoiceAgent({ tenantId, token, shopCode, defaultOutputMode: 'voice', webSpeech: true, browserTts: false })
 
   const transcriptRef = useRef<HTMLDivElement>(null)
-  const [recSecs,   setRecSecs]   = useState(0)
-  const [endStep,   setEndStep]   = useState<'sending' | 'confirmed' | null>(null)
-  const [resetSecs, setResetSecs] = useState(5)
-  const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null)
-  const endTimerRef = useRef<ReturnType<typeof setTimeout>  | null>(null)
+  const timerRef      = useRef<ReturnType<typeof setInterval> | null>(null)
+  const endTimerRef   = useRef<ReturnType<typeof setTimeout>  | null>(null)
+  const resetTickRef  = useRef<ReturnType<typeof setInterval> | null>(null)
   const MAX = 60
 
-  // Ensure voice output (belt-and-suspenders alongside defaultOutputMode)
-  useEffect(() => { setOutputMode('voice') }, [setOutputMode])
+  const [recSecs,     setRecSecs]    = useState(0)
+  const [endStep,     setEndStep]    = useState<'sending' | 'confirmed' | null>(null)
+  const [resetSecs,   setResetSecs]  = useState(5)
+  const [themeColor,  setThemeColor] = useState(DEFAULT_COLOR)
+  const [activeTheme, setActiveTheme] = useState<VoiceThemeName>(() => {
+    if (typeof document !== 'undefined') {
+      const t = document.documentElement.dataset.vaTheme
+      if (t && THEMES.includes(t as VoiceThemeName)) return t as VoiceThemeName
+    }
+    return 'nexus'
+  })
+
+  // Sync --nx-accent → themeColor and data-va-theme → activeTheme via MutationObserver.
+  // The observer covers both direct attribute changes and postMessage-driven style updates
+  // (ThemeProvider calls root.style.setProperty which triggers the 'style' attribute watch).
+  useEffect(() => {
+    const readAccent = () => {
+      const root  = document.documentElement
+      const value = getComputedStyle(root).getPropertyValue('--nx-accent').trim()
+      if (/^#[0-9a-fA-F]{6}$/.test(value)) setThemeColor(value)
+      const t = root.dataset.vaTheme
+      if (t && THEMES.includes(t as VoiceThemeName)) setActiveTheme(t as VoiceThemeName)
+    }
+
+    readAccent()
+    const observer = new MutationObserver(readAccent)
+    observer.observe(document.documentElement, {
+      attributes:     true,
+      attributeFilter: ['style', 'data-va-theme'],
+    })
+    return () => observer.disconnect()
+  }, [])
+
+  // In-page theme switcher
+  const handleThemeChange = useCallback((t: VoiceThemeName) => {
+    document.documentElement.dataset.vaTheme = t
+    setActiveTheme(t)
+    // MutationObserver fires readAccent → updates themeColor automatically
+  }, [])
 
   // Auto-scroll transcript
   useEffect(() => {
@@ -79,13 +138,13 @@ export function NexusAgent({ tenantId, token, shopCode }: Props) {
     if (el) el.scrollTop = el.scrollHeight
   }, [transcript, partialReply])
 
-  // Countdown timer — stops ONLY when user presses stop OR 60 s elapses
+  // Recording countdown — auto-stops at 60 s
   useEffect(() => {
     if (isRecording) {
       setRecSecs(0)
       timerRef.current = setInterval(() => {
         setRecSecs(s => {
-          if (s >= MAX - 1) { toggleMic(); return MAX }   // auto-stop at 60 s
+          if (s >= MAX - 1) { toggleMic(); return MAX }
           return s + 1
         })
       }, 1000)
@@ -96,45 +155,45 @@ export function NexusAgent({ tenantId, token, shopCode }: Props) {
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
   }, [isRecording, toggleMic])
 
-  // End-call flow: sending → confirmed → reset
+  // End-call flow: sending → confirmed → auto-reset
   useEffect(() => {
     if (phase !== 'ended') return
     setEndStep('sending')
 
-    // Step 1 → Step 2: show "Sending…" for 2.5 s then "Confirmed"
     endTimerRef.current = setTimeout(() => {
       setEndStep('confirmed')
       setResetSecs(5)
 
-
-      // Countdown then reload for next customer
-      let c = 5
-      const tick = setInterval(() => {
-        c--
-        setResetSecs(c)
-        if (c <= 0) {
-          clearInterval(tick)
-          window.location.reload()
-        }
+      resetTickRef.current = setInterval(() => {
+        setResetSecs(s => {
+          if (s <= 1) {
+            clearInterval(resetTickRef.current!)
+            resetTickRef.current = null
+            onReset()
+            return 0
+          }
+          return s - 1
+        })
       }, 1000)
     }, 5000)
 
-    return () => { if (endTimerRef.current) clearTimeout(endTimerRef.current) }
-  }, [phase])
+    return () => {
+      if (endTimerRef.current)  clearTimeout(endTimerRef.current)
+      if (resetTickRef.current) clearInterval(resetTickRef.current)
+    }
+  }, [phase, onReset])
 
-  const handleNewMessage = useCallback(() => window.location.reload(), [])
+  const color = reviewData.sentiment ? mc(reviewData.sentiment) : themeColor
+  const ended = phase === 'ended'
+  const busy  = phase === 'thinking' || phase === 'transcribing' || phase === 'connecting'
 
-  const color   = mc(reviewData.sentiment)
-  const ended   = phase === 'ended'
-  const busy    = phase === 'thinking' || phase === 'transcribing' || phase === 'connecting'
-
-  // MM:SS countdown — counts DOWN from 1:00 to 0:00
+  // MM:SS — counts down from 1:00 to 0:00
   const remaining = MAX - recSecs
-  const mm  = Math.floor(remaining / 60)
-  const ss  = (remaining % 60).toString().padStart(2, '0')
+  const mm        = Math.floor(remaining / 60)
+  const ss        = (remaining % 60).toString().padStart(2, '0')
   const countdown = `${mm}:${ss}`
 
-  // SVG progress arc — fills as time is used
+  // SVG progress arc — depletes as time is used
   const R    = 68
   const CIRC = 2 * Math.PI * R
   const dash = CIRC * (recSecs / MAX)
@@ -149,13 +208,11 @@ export function NexusAgent({ tenantId, token, shopCode }: Props) {
       {!validShop && (
         <div className="nx-shop-required">
           <div className="nx-shop-card">
-            <div className="nx-shop-icon">🏪</div>
-            <h2 className="nx-shop-title">Please provide proper shop</h2>
+            <div className="nx-shop-icon">⚙️</div>
+            <h2 className="nx-shop-title">Agent Not Available</h2>
             <p className="nx-shop-body">
-              This agent must be linked to a shop before it can accept reviews.
-            </p>
-            <p className="nx-shop-hint">
-              Add <code>?shop=shop1</code> (or shop2, shop3, shop4) to the URL.
+              This agent has not been configured for your location.
+              Please contact your administrator.
             </p>
           </div>
         </div>
@@ -168,7 +225,11 @@ export function NexusAgent({ tenantId, token, shopCode }: Props) {
             <div className="nx-send-ring nx-sr1" style={{ borderColor: color }} />
             <div className="nx-send-ring nx-sr2" style={{ borderColor: color }} />
             <div className="nx-send-ring nx-sr3" style={{ borderColor: color }} />
-            <div className="nx-send-orb" style={{ background: `radial-gradient(circle at 35% 30%, ${color}55, ${color}18 60%, ${color}06)`, boxShadow: `0 0 0 2px ${color}40, 0 0 50px ${color}28` }}>
+            <div className="nx-send-orb"
+                 style={{
+                   background: `radial-gradient(circle at 35% 30%, ${color}55, ${color}18 60%, ${color}06)`,
+                   boxShadow:  `0 0 0 2px ${color}40, 0 0 50px ${color}28`,
+                 }}>
               <svg viewBox="0 0 24 24" className="w-8 h-8" fill="none"
                    stroke={color} strokeWidth={1.8} strokeLinecap="round">
                 <line x1="22" y1="2" x2="11" y2="13" />
@@ -203,9 +264,7 @@ export function NexusAgent({ tenantId, token, shopCode }: Props) {
               {END_MSG[reviewData.sentiment ?? ''] ?? 'Your message has been sent to our team.'}
             </p>
 
-            <p className="nx-conf-sub">
-              We will reach out to you shortly.
-            </p>
+            <p className="nx-conf-sub">We will reach out to you shortly.</p>
 
             {(leadData.name || leadData.phone) && (
               <div className="nx-conf-contact" style={{ borderColor: color + '30' }}>
@@ -221,7 +280,7 @@ export function NexusAgent({ tenantId, token, shopCode }: Props) {
               </span>
             )}
 
-            <button className="nx-new-btn" onClick={handleNewMessage}
+            <button className="nx-new-btn" onClick={onReset}
                     style={{ borderColor: color + '50', color }}>
               New Message
             </button>
@@ -237,11 +296,11 @@ export function NexusAgent({ tenantId, token, shopCode }: Props) {
       {validShop && !ended && (
         <div className="nx-content">
 
-          {/* ── Quota / error banner ────────────────────────────────────── */}
+          {/* ── Error banner ────────────────────────────────────────────── */}
           {phase === 'error' && error && (
             <div className="nx-err-banner">
               {error.includes('quota') || error.includes('429')
-                ? <>⚡ OpenAI quota exceeded — <a href="https://platform.openai.com/account/billing" target="_blank" rel="noreferrer" className="underline">add credits</a> to continue</>
+                ? <>⚡ Service limit reached — please try again later</>
                 : <>⚠️ {error}</>}
             </div>
           )}
@@ -252,30 +311,49 @@ export function NexusAgent({ tenantId, token, shopCode }: Props) {
               <span className="nx-live-dot" />
               <span className="nx-company">{companyName || 'Customer Experience'}</span>
             </div>
+
+            {/* Theme picker */}
+            <div className="nx-theme-picker" role="group" aria-label="Select theme">
+              {THEMES.map(t => (
+                <button
+                  key={t}
+                  className={`nx-theme-dot${activeTheme === t ? ' nx-theme-dot-active' : ''}`}
+                  style={{ background: THEME_ACCENTS[t] }}
+                  onClick={() => handleThemeChange(t)}
+                  aria-label={`${THEME_LABELS[t]} theme`}
+                  aria-pressed={activeTheme === t}
+                  title={THEME_LABELS[t]}
+                />
+              ))}
+            </div>
+
             <div className="nx-lang-toggle">
               <button
                 className={`nx-lang-btn ${language.toLowerCase() === 'english' ? 'nx-lang-active' : ''}`}
                 onClick={() => setLanguage('English')}
                 disabled={isRecording}
+                aria-pressed={language.toLowerCase() === 'english'}
               >EN</button>
               <button
                 className={`nx-lang-btn ${language.toLowerCase() === 'urdu' ? 'nx-lang-active' : ''}`}
                 onClick={() => setLanguage('Urdu')}
                 disabled={isRecording}
+                aria-pressed={language.toLowerCase() === 'urdu'}
               >اردو</button>
             </div>
           </header>
 
           {/* ── Agent avatar ─────────────────────────────────────────────── */}
           <div className="nx-orb-section">
-            <AnimatedAvatar phase={phase} color={color} />
+            <div className="nx-avatar-wrap">
+              <AnimatedAvatar phase={phase} color={color} />
+            </div>
 
             <p className="nx-agent-name">{agentName || 'Review Agent'}</p>
-            <p className="nx-status-txt">
+            <p className="nx-status-txt" role="status" aria-live="polite">
               {error && phase === 'error' ? error : STATUS[phase]}
             </p>
 
-            {/* Live transcript subtitle while user speaks */}
             {isRecording && liveTranscript && (
               <p className="nx-live-txt" style={{ borderColor: color + '35', color: color + 'CC' }}>
                 {liveTranscript.length > 80
@@ -284,11 +362,8 @@ export function NexusAgent({ tenantId, token, shopCode }: Props) {
               </p>
             )}
 
-            {/* Browser not supported warning */}
             {!webSpeechSupported && (
-              <p className="nx-unsupported">
-                ⚠️ Voice input requires Chrome or Edge
-              </p>
+              <p className="nx-unsupported">⚠️ Voice input requires Chrome or Edge</p>
             )}
           </div>
 
@@ -351,7 +426,6 @@ export function NexusAgent({ tenantId, token, shopCode }: Props) {
           <div className="nx-btn-zone">
             <div className="nx-btn-wrap">
 
-              {/* Sci-fi wave rings (recording) */}
               {isRecording && (
                 <>
                   <div className="nx-wr nx-wr1" style={{ borderColor: color }} />
@@ -360,7 +434,6 @@ export function NexusAgent({ tenantId, token, shopCode }: Props) {
                 </>
               )}
 
-              {/* Countdown arc */}
               {isRecording && (
                 <svg className="nx-arc" viewBox="0 0 150 150">
                   <circle cx="75" cy="75" r={R}
@@ -372,27 +445,23 @@ export function NexusAgent({ tenantId, token, shopCode }: Props) {
                 </svg>
               )}
 
-              {/* The button */}
               <button
                 onClick={toggleMic}
                 disabled={busy}
                 className={`nx-btn ${isRecording ? 'nx-btn-rec' : busy ? 'nx-btn-busy' : 'nx-btn-idle'}`}
                 style={isRecording ? {
-                  background: `radial-gradient(circle at 38% 30%, ${color}44 0%, ${color}16 55%, ${color}06 100%)`,
-                  boxShadow: `0 0 0 2px ${color}50, 0 0 55px ${color}28, 0 10px 36px rgba(0,0,0,0.55)`,
+                  background: `radial-gradient(circle at 38% 30%, ${color}CC 0%, ${color}66 50%, ${color}22 100%)`,
+                  boxShadow:  `0 0 0 3px ${color}DD, 0 0 0 9px ${color}30, 0 0 60px ${color}77, 0 14px 44px rgba(0,0,0,0.70)`,
                 } : {}}
                 aria-label={isRecording ? 'Stop recording' : 'Start recording'}
               >
                 {isRecording ? (
-                  /* Stop square */
                   <svg viewBox="0 0 24 24" className="nx-bi">
                     <rect x="6" y="6" width="12" height="12" rx="3" fill="white" />
                   </svg>
                 ) : busy ? (
-                  /* Spinner */
                   <div className="nx-spin" style={{ borderTopColor: color }} />
                 ) : (
-                  /* Mic */
                   <svg viewBox="0 0 24 24" className="nx-bi" fill="none"
                        stroke="white" strokeWidth="1.8" strokeLinecap="round">
                     <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
@@ -402,14 +471,12 @@ export function NexusAgent({ tenantId, token, shopCode }: Props) {
                   </svg>
                 )}
 
-                {/* Pulsing record indicator */}
                 {isRecording && (
                   <span className="nx-recdot" style={{ background: color }} />
                 )}
               </button>
             </div>
 
-            {/* Countdown badge — shown above label when recording */}
             {isRecording && (
               <div className="nx-countdown-badge" style={{ borderColor: color + '55', color }}>
                 <span className="nx-countdown-time">{countdown}</span>
@@ -417,13 +484,24 @@ export function NexusAgent({ tenantId, token, shopCode }: Props) {
               </div>
             )}
 
-            {/* Label */}
             <p className="nx-btn-lbl">
-              {isRecording    ? 'Press to stop recording'
-               : busy         ? 'Please wait…'
+              {isRecording         ? 'Press to stop recording'
+               : busy              ? 'Please wait…'
                : phase === 'speaking' ? 'Agent is responding…'
                : 'Press to record your review'}
             </p>
+
+            {/* End Call — shown once at least one exchange has happened */}
+            {transcript.length > 0 && (
+              <button className="nx-end-btn" onClick={endCall} aria-label="End call">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none"
+                     stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.68 13.31a16 16 0 003.41 2.6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7 2 2 0 011.72 2v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.42 19.42 0 013.07 8.72 19.79 19.79 0 01.36 .54 2 2 0 012.18 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L6.16 9.9a16 16 0 004.52 3.41z"/>
+                  <line x1="23" y1="1" x2="1" y2="23"/>
+                </svg>
+                End Call
+              </button>
+            )}
           </div>
 
         </div>
@@ -439,7 +517,7 @@ const ROBOTS = Array.from({ length: 38 }, (_, i) => {
     x:    s % 100,
     y:    (s * 3) % 100,
     size: s % 5 < 1 ? 16 : s % 5 < 3 ? 11 : 8,
-    o:    0.06 + (s % 35) / 280,     // very subtle — 0.06 … 0.19
+    o:    0.06 + (s % 35) / 280,
     t:    s % 3 === 0,
     d:    (s % 40) / 10,
     dur:  3.5 + (s % 30) / 10,

@@ -1,12 +1,14 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend,
+  XAxis, YAxis, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell,
   LineChart, Line, CartesianGrid,
 } from 'recharts'
 import type { DashboardData } from '@/lib/db/dashboard-query'
+import { PROVINCES, CITIES_BY_PROVINCE } from '@/data/pakistan-locations'
 
 // ── Emoji maps ─────────────────────────────────────────────────────────────────
 const SENTIMENT_EMOJI: Record<string, string> = {
@@ -54,17 +56,25 @@ interface SearchSource {
 interface SearchResult { answer: string; sources: SearchSource[] }
 
 // ── Palette ────────────────────────────────────────────────────────────────────
-const PIE_COLORS = ['#22c55e', '#f97316', '#ef4444', '#6366f1']
+const CHART_GRID = '#d8e0ea'
+const CHART_TICK = '#64748b'
+const DASHBOARD_ACCENT = '#2563eb'
+const DASHBOARD_ACCENT_DARK = '#1d4ed8'
+
+const surfaceCls = 'bg-white border border-slate-200 shadow-[0_18px_45px_rgba(15,23,42,0.08)]'
+const insetCls = 'bg-slate-50 border border-slate-200'
+const inputCls = 'w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-600 transition-colors'
+const secondaryBtnCls = 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-300'
 
 // ── Shared UI primitives ───────────────────────────────────────────────────────
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <div className={`bg-[#1a1f2e] rounded-2xl p-5 ${className}`}>{children}</div>
+  return <div className={`${surfaceCls} rounded-xl p-5 lg:p-6 ${className}`}>{children}</div>
 }
 function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">{children}</h2>
+  return <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">{children}</h2>
 }
 function Divider() {
-  return <div className="border-t border-[#2d3748] my-6" />
+  return <div className="border-t border-slate-200 my-8" />
 }
 
 // ── KPI Card ───────────────────────────────────────────────────────────────────
@@ -75,10 +85,10 @@ function KpiCard({
   sub?: string; color?: string; highlight?: boolean
 }) {
   return (
-    <div className={`bg-[#1a1f2e] rounded-2xl p-5 flex flex-col gap-1 border ${highlight ? 'border-[#6c8ef7]/40' : 'border-transparent'}`}>
+    <div className={`${surfaceCls} rounded-xl p-5 flex flex-col gap-1 border ${highlight ? 'border-blue-300 ring-4 ring-blue-50' : ''}`}>
       <div className="flex items-center gap-2 mb-1">
         <span className="text-xl">{emoji}</span>
-        <span className="text-xs text-slate-400 uppercase tracking-widest">{label}</span>
+        <span className="text-xs text-slate-500 uppercase tracking-widest">{label}</span>
       </div>
       <span className="text-3xl font-bold" style={{ color }}>{value}</span>
       {sub && <span className="text-xs text-slate-500 mt-1">{sub}</span>}
@@ -93,8 +103,8 @@ function SentimentRow({ sentiment, count, total }: { sentiment: string; count: n
   return (
     <div className="flex items-center gap-3 py-2">
       <span className="text-lg w-6">{SENTIMENT_EMOJI[sentiment]}</span>
-      <span className="text-sm text-slate-300 w-24">{SENTIMENT_LABEL[sentiment]}</span>
-      <div className="flex-1 bg-[#131720] rounded-full h-3">
+      <span className="text-sm text-slate-700 w-24">{SENTIMENT_LABEL[sentiment]}</span>
+      <div className="flex-1 bg-slate-100 rounded-full h-3">
         <div className="h-3 rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />
       </div>
       <span className="text-sm font-bold w-8 text-right" style={{ color }}>{count}</span>
@@ -115,16 +125,16 @@ function CategoryRow({ name, data, maxTotal }: {
   const pctSugg = maxTotal ? (data.suggestion / maxTotal) * 100 : 0
 
   return (
-    <div className="flex items-center gap-3 py-2 border-b border-[#1e2535] last:border-0">
+    <div className="grid grid-cols-[auto_minmax(5rem,8rem)_1fr] sm:grid-cols-[auto_8rem_1fr_auto] items-center gap-3 py-2 border-b border-slate-100 last:border-0">
       <span className="text-lg w-6">{CATEGORY_EMOJI[name] ?? '📌'}</span>
-      <span className="text-sm text-slate-300 w-24 capitalize">{name}</span>
-      <div className="flex-1 flex gap-0.5 h-5 rounded-lg overflow-hidden bg-[#131720]">
+      <span className="text-sm text-slate-700 capitalize min-w-0 break-words">{name}</span>
+      <div className="flex min-w-0 gap-0.5 h-5 rounded-lg overflow-hidden bg-slate-100">
         {data.positive   > 0 && <div style={{ width: `${pctPos}%`,  background: '#22c55e' }} title={`✅ ${data.positive}`} />}
         {data.negative   > 0 && <div style={{ width: `${pctNeg}%`,  background: '#f97316' }} title={`⚠️ ${data.negative}`} />}
         {data.complaint  > 0 && <div style={{ width: `${pctComp}%`, background: '#ef4444' }} title={`🚨 ${data.complaint}`} />}
         {data.suggestion > 0 && <div style={{ width: `${pctSugg}%`, background: '#6366f1' }} title={`💡 ${data.suggestion}`} />}
       </div>
-      <div className="flex gap-2 text-xs flex-wrap">
+      <div className="col-span-3 sm:col-span-1 flex gap-2 text-xs flex-wrap justify-start sm:justify-end">
         <span className="text-[#22c55e]">✅ {data.positive}</span>
         <span className="text-[#f97316]">⚠️ {data.negative}</span>
         <span className="text-[#ef4444]">🚨 {data.complaint}</span>
@@ -141,11 +151,11 @@ function RatingBar({ rating, count, max }: { rating: number; count: number; max:
   return (
     <div className="flex items-center gap-3 py-1">
       <span className="text-base w-6">{RATING_EMOJI[rating]}</span>
-      <span className="text-xs text-slate-400 w-4">{rating}★</span>
-      <div className="flex-1 bg-[#131720] rounded-full h-2.5">
+      <span className="text-xs text-slate-500 w-4">{rating}★</span>
+      <div className="flex-1 bg-slate-100 rounded-full h-2.5">
         <div className="h-2.5 rounded-full" style={{ width: `${pct}%`, background: colors[rating] }} />
       </div>
-      <span className="text-xs font-semibold text-slate-300 w-6 text-right">{count}</span>
+      <span className="text-xs font-semibold text-slate-700 w-6 text-right">{count}</span>
     </div>
   )
 }
@@ -165,13 +175,13 @@ function ShopCard({ shop, rank }: {
     : '😟'
 
   return (
-    <div className="bg-[#131720] rounded-2xl p-5 border border-[#2d3748]">
+    <div className={`${surfaceCls} rounded-xl p-5`}>
       {/* Header */}
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <div className="flex items-center gap-2">
+      <div className="flex items-start justify-between mb-4 gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
             <span className="text-xs text-slate-500 font-bold">#{rank}</span>
-            <span className="text-sm font-bold text-slate-200">🏪 {shop.name}</span>
+            <span className="text-sm font-bold text-slate-900 break-words">🏪 {shop.name}</span>
           </div>
           {shop.city && <p className="text-xs text-slate-500 mt-0.5">📍 {shop.city}</p>}
         </div>
@@ -192,17 +202,17 @@ function ShopCard({ shop, rank }: {
           { emoji: '🚨', label: 'Complaint',  count: shop.complaint,  color: '#ef4444' },
           { emoji: '💡', label: 'Suggestion', count: shop.suggestion, color: '#6366f1' },
         ].map((s) => (
-          <div key={s.label} className="flex-1 bg-[#1a1f2e] rounded-xl p-2 text-center">
+          <div key={s.label} className="flex-1 bg-slate-50 rounded-lg p-2 text-center border border-slate-100 min-w-0">
             <div className="text-base">{s.emoji}</div>
             <div className="text-lg font-bold" style={{ color: s.color }}>{s.count}</div>
-            <div className="text-xs text-slate-600">{s.label}</div>
+            <div className="text-xs text-slate-500 truncate">{s.label}</div>
           </div>
         ))}
       </div>
 
       {/* Avg rating */}
       <div className="flex items-center justify-between mb-3 text-sm">
-        <span className="text-slate-400">⭐ Avg Rating</span>
+        <span className="text-slate-500">⭐ Avg Rating</span>
         <span className="font-bold text-yellow-400">
           {shop.avgRating !== null ? `${shop.avgRating} / 5` : '—'}
         </span>
@@ -215,8 +225,8 @@ function ShopCard({ shop, rank }: {
           .map(([cat, d]) => (
             <div key={cat} className="flex items-center gap-2 text-xs">
               <span>{CATEGORY_EMOJI[cat] ?? '📌'}</span>
-              <span className="text-slate-400 capitalize w-20">{cat}</span>
-              <div className="flex-1 bg-[#0f1117] rounded-full h-1.5">
+              <span className="text-slate-600 capitalize w-20 min-w-0 break-words">{cat}</span>
+              <div className="flex-1 bg-slate-100 rounded-full h-1.5">
                 <div
                   className="h-1.5 rounded-full"
                   style={{
@@ -238,16 +248,16 @@ function ReviewFeed({ reviews }: { reviews: DashboardData['recentReviews'] }) {
   return (
     <div className="space-y-3">
       {reviews.map((r) => (
-        <div key={r.id} className="flex gap-3 p-3 bg-[#131720] rounded-xl border border-[#2d3748]">
+        <div key={r.id} className={`flex gap-3 p-3 ${insetCls} rounded-lg`}>
           <span className="text-xl mt-0.5 shrink-0">
             {SENTIMENT_EMOJI[r.sentiment ?? ''] ?? '💬'}
           </span>
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-slate-300">🏪 {r.shopName}</span>
+              <div className="flex items-center gap-2 flex-wrap min-w-0">
+                <span className="text-xs font-semibold text-slate-800 break-words">🏪 {r.shopName}</span>
                 {r.category && (
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-[#1a1f2e] text-slate-400 capitalize">
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-white text-slate-600 border border-slate-200 capitalize">
                     {CATEGORY_EMOJI[r.category]} {r.category}
                   </span>
                 )}
@@ -259,7 +269,7 @@ function ReviewFeed({ reviews }: { reviews: DashboardData['recentReviews'] }) {
                 </span>
               </div>
             </div>
-            <p className="text-xs text-slate-400 leading-relaxed line-clamp-2">{r.summary}</p>
+            <p className="text-xs text-slate-600 leading-relaxed line-clamp-2">{r.summary}</p>
           </div>
         </div>
       ))}
@@ -303,18 +313,18 @@ function SearchPanel() {
     <Card className="mb-6">
       <SectionTitle>🤖 AI-Powered Review Search</SectionTitle>
       <p className="text-xs text-slate-500 mb-4">Ask any question about your reviews in plain English</p>
-      <div className="flex gap-2 mb-4">
+      <div className="flex flex-col sm:flex-row gap-2 mb-4">
         <input
           ref={inputRef}
           type="text" value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && search(query)}
           placeholder="e.g. Which outlet has the most behavioral complaints?"
-          className="flex-1 bg-[#131720] border border-[#2d3748] rounded-xl px-4 py-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-[#6c8ef7] transition-colors"
+          className={`${inputCls} flex-1`}
         />
         <button
           onClick={() => search(query)} disabled={loading || !query.trim()}
-          className="px-5 py-2.5 bg-[#6c8ef7] hover:bg-[#5a7ef0] disabled:opacity-40 text-white text-sm font-semibold rounded-xl transition-colors"
+          className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-sm font-semibold rounded-lg transition-colors"
         >
           {loading ? '...' : '🔍 Ask'}
         </button>
@@ -323,7 +333,7 @@ function SearchPanel() {
         <div className="flex flex-wrap gap-2">
           {EXAMPLE_QUERIES.map((q) => (
             <button key={q} onClick={() => search(q)}
-              className="text-xs px-3 py-1.5 bg-[#131720] hover:bg-[#1e2535] text-slate-400 hover:text-slate-200 rounded-full border border-[#2d3748] transition-colors">
+              className="text-xs px-3 py-1.5 bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-700 rounded-full border border-slate-200 transition-colors">
               {q}
             </button>
           ))}
@@ -331,16 +341,16 @@ function SearchPanel() {
       )}
       {loading && (
         <div className="flex items-center gap-3 py-6 text-slate-400 text-sm">
-          <div className="w-4 h-4 border-2 border-[#6c8ef7] border-t-transparent rounded-full animate-spin" />
+          <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
           Analysing reviews…
         </div>
       )}
       {error && <p className="text-sm text-red-400 mt-2">❌ {error}</p>}
       {result && (
         <div className="mt-4">
-          <div className="bg-[#131720] rounded-xl p-4 mb-4 border-l-4 border-[#6c8ef7]">
-            <p className="text-xs text-[#6c8ef7] font-bold mb-2 uppercase tracking-widest">🤖 AI Analysis</p>
-            <p className="text-slate-200 text-sm leading-relaxed">{result.answer}</p>
+          <div className="bg-blue-50 rounded-xl p-4 mb-4 border-l-4 border-blue-600">
+            <p className="text-xs text-blue-700 font-bold mb-2 uppercase tracking-widest">🤖 AI Analysis</p>
+            <p className="text-slate-800 text-sm leading-relaxed">{result.answer}</p>
           </div>
           {result.sources.length > 0 && (
             <>
@@ -349,9 +359,9 @@ function SearchPanel() {
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {result.sources.map((s) => (
-                  <div key={s.id} className="bg-[#131720] rounded-xl p-3 border border-[#2d3748]">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs font-semibold text-slate-300">🏪 {s.shop}</span>
+                  <div key={s.id} className={`${insetCls} rounded-lg p-3`}>
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <span className="text-xs font-semibold text-slate-800 break-words">🏪 {s.shop}</span>
                       <span className="text-sm">{SENTIMENT_EMOJI[s.sentiment ?? ''] ?? '💬'}</span>
                     </div>
                     {s.category && (
@@ -359,7 +369,7 @@ function SearchPanel() {
                         {CATEGORY_EMOJI[s.category]} {s.category}{s.subcategory ? ` · ${s.subcategory}` : ''}
                       </p>
                     )}
-                    <p className="text-xs text-slate-400 leading-relaxed line-clamp-2">{s.summary}</p>
+                    <p className="text-xs text-slate-600 leading-relaxed line-clamp-2">{s.summary}</p>
                     {s.rating && (
                       <div className="mt-1.5 text-xs text-yellow-400">{RATING_EMOJI[s.rating]} {s.rating}★</div>
                     )}
@@ -381,10 +391,10 @@ function SearchPanel() {
 // ── Empty state ────────────────────────────────────────────────────────────────
 function EmptyState() {
   return (
-    <div className="min-h-dvh bg-[#0f1117] flex items-center justify-center">
+    <div className="min-h-dvh bg-slate-100 flex items-center justify-center">
       <div className="text-center">
         <div className="text-7xl mb-4">📊</div>
-        <p className="text-xl font-bold text-slate-300">No reviews yet</p>
+        <p className="text-xl font-bold text-slate-900">No reviews yet</p>
         <p className="text-sm text-slate-500 mt-2">Reviews will appear once customers start leaving feedback.</p>
       </div>
     </div>
@@ -393,6 +403,9 @@ function EmptyState() {
 
 // ── Main Dashboard ─────────────────────────────────────────────────────────────
 export function DashboardClient({ data }: { data: DashboardData | null }) {
+  const router = useRouter()
+  const [tab, setTab] = useState<'analytics' | 'shops'>('analytics')
+
   if (!data) return <EmptyState />
 
   const { totalReviews, avgRating, bysentiment, categorySentiment, trend, ratingDist, topIssues, topSuggestions, recentReviews, shops } = data
@@ -421,202 +434,610 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
     : satisfaction >= 70 ? '#22c55e' : satisfaction >= 45 ? '#eab308' : '#ef4444'
 
   return (
-    <div className="min-h-dvh bg-[#0f1117] text-white p-6 font-sans">
+    <div className="min-h-dvh bg-[linear-gradient(135deg,#f8fafc_0%,#eef4ff_48%,#f5f7fb_100%)] text-slate-900 font-sans">
+      <div className="mx-auto w-full max-w-[1720px] px-4 py-6 sm:px-6 lg:px-8 xl:px-10">
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between mb-8 flex-wrap gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-white">📊 Customer Review Analytics</h1>
+        <div className="min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-950 break-words">📊 Customer Review Analytics</h1>
           <p className="text-slate-400 text-sm mt-1">Management Dashboard · Real-time outlet performance</p>
+          {/* Tab bar */}
+          <div className="flex gap-2 mt-4 flex-wrap">
+            <button
+              onClick={() => setTab('analytics')}
+              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors border ${
+                tab === 'analytics'
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                  : `${secondaryBtnCls}`
+              }`}
+            >
+              📊 Analytics
+            </button>
+            <button
+              onClick={() => setTab('shops')}
+              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors border ${
+                tab === 'shops'
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                  : `${secondaryBtnCls}`
+              }`}
+            >
+              🏪 Shops
+            </button>
+          </div>
         </div>
-        <div className="text-right text-xs text-slate-500">
+        <div className="text-left sm:text-right text-xs text-slate-500">
           <p>🗓️ Last updated: {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
           <p className="mt-1">🗄️ Powered by SQLite · sqlite-vec</p>
+          {/* Logout button */}
+          <button
+            onClick={async () => {
+              await fetch('/api/dashboard/auth', { method: 'DELETE' })
+              router.push('/dashboard/login')
+            }}
+            className="mt-2 text-xs text-slate-500 hover:text-red-600 transition-colors"
+          >
+            Logout
+          </button>
         </div>
       </div>
 
-      {/* ── AI Search ─────────────────────────────────────────────────────── */}
-      <SearchPanel />
+      {/* ── Tab content ───────────────────────────────────────────────────── */}
+      {tab === 'analytics' && (
+        <>
+          {/* ── AI Search ───────────────────────────────────────────────── */}
+          <SearchPanel />
 
-      {/* ── Executive KPIs ────────────────────────────────────────────────── */}
-      <SectionTitle>Executive Summary</SectionTitle>
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-8">
-        <KpiCard emoji="📊" label="Total"       value={totalReviews} color="#6c8ef7" highlight />
-        <KpiCard emoji="✅" label="Positive"     value={positive}
-          sub={`${totalReviews ? Math.round(positive / totalReviews * 100) : 0}%`}
-          color="#22c55e" />
-        <KpiCard emoji="⚠️" label="Negative"    value={negative}
-          sub={`${totalReviews ? Math.round(negative / totalReviews * 100) : 0}%`}
-          color="#f97316" />
-        <KpiCard emoji="🚨" label="Complaints"  value={complaint}
-          sub={`${totalReviews ? Math.round(complaint / totalReviews * 100) : 0}%`}
-          color="#ef4444" />
-        <KpiCard emoji="💡" label="Suggestions" value={suggestion}
-          sub={`${totalReviews ? Math.round(suggestion / totalReviews * 100) : 0}%`}
-          color="#6366f1" />
-        <KpiCard emoji="⭐" label="Avg Rating"
-          value={avgRating !== null ? `${avgRating}/5` : '—'}
-          color="#eab308" />
-        <KpiCard emoji={satisfactionEmoji} label="Satisfaction"
-          value={satisfaction !== null ? `${satisfaction}%` : '—'}
-          color={satisfactionColor} />
-      </div>
-
-      <Divider />
-
-      {/* ── Sentiment + Category ──────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-8">
-
-        {/* Sentiment Analysis */}
-        <Card>
-          <SectionTitle>😊 Sentiment Breakdown</SectionTitle>
-          <div className="flex gap-4 items-center">
-            <ResponsiveContainer width={160} height={160}>
-              <PieChart>
-                <Pie data={sentimentPie} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" stroke="none">
-                  {sentimentPie.map((s) => <Cell key={s.name} fill={s.color} />)}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ background: '#1a1f2e', border: 'none', borderRadius: 8, fontSize: 12 }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="flex-1">
-              {['positive', 'negative', 'complaint', 'suggestion'].map((s) => (
-                <SentimentRow key={s} sentiment={s} count={bysentiment[s] ?? 0} total={totalReviews} />
-              ))}
-            </div>
+          {/* ── Executive KPIs ──────────────────────────────────────────── */}
+          <SectionTitle>Executive Summary</SectionTitle>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7 gap-4 mb-8">
+            <KpiCard emoji="📊" label="Total"       value={totalReviews} color={DASHBOARD_ACCENT} highlight />
+            <KpiCard emoji="✅" label="Positive"     value={positive}
+              sub={`${totalReviews ? Math.round(positive / totalReviews * 100) : 0}%`}
+              color="#22c55e" />
+            <KpiCard emoji="⚠️" label="Negative"    value={negative}
+              sub={`${totalReviews ? Math.round(negative / totalReviews * 100) : 0}%`}
+              color="#f97316" />
+            <KpiCard emoji="🚨" label="Complaints"  value={complaint}
+              sub={`${totalReviews ? Math.round(complaint / totalReviews * 100) : 0}%`}
+              color="#ef4444" />
+            <KpiCard emoji="💡" label="Suggestions" value={suggestion}
+              sub={`${totalReviews ? Math.round(suggestion / totalReviews * 100) : 0}%`}
+              color={DASHBOARD_ACCENT_DARK} />
+            <KpiCard emoji="⭐" label="Avg Rating"
+              value={avgRating !== null ? `${avgRating}/5` : '—'}
+              color="#eab308" />
+            <KpiCard emoji={satisfactionEmoji} label="Satisfaction"
+              value={satisfaction !== null ? `${satisfaction}%` : '—'}
+              color={satisfactionColor} />
           </div>
-        </Card>
 
-        {/* Category Analysis */}
-        <Card>
-          <SectionTitle>📂 Category Breakdown (Positive vs Negative)</SectionTitle>
-          <div>
-            {Object.entries(categorySentiment)
-              .sort((a, b) => b[1].total - a[1].total)
-              .map(([cat, d]) => (
-                <CategoryRow key={cat} name={cat} data={d} maxTotal={maxCatTotal} />
-              ))}
+          <Divider />
+
+          {/* ── Sentiment + Category ────────────────────────────────────── */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 mb-8">
+
+            {/* Sentiment Analysis */}
+            <Card>
+              <SectionTitle>😊 Sentiment Breakdown</SectionTitle>
+              <div className="flex flex-col md:flex-row gap-4 items-center">
+                <ResponsiveContainer width="100%" height={220} minWidth={180}>
+                  <PieChart>
+                    <Pie data={sentimentPie} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" stroke="none">
+                      {sentimentPie.map((s) => <Cell key={s.name} fill={s.color} />)}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 12 }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="flex-1">
+                  {['positive', 'negative', 'complaint', 'suggestion'].map((s) => (
+                    <SentimentRow key={s} sentiment={s} count={bysentiment[s] ?? 0} total={totalReviews} />
+                  ))}
+                </div>
+              </div>
+            </Card>
+
+            {/* Category Analysis */}
+            <Card>
+              <SectionTitle>📂 Category Breakdown (Positive vs Negative)</SectionTitle>
+              <div>
+                {Object.entries(categorySentiment)
+                  .sort((a, b) => b[1].total - a[1].total)
+                  .map(([cat, d]) => (
+                    <CategoryRow key={cat} name={cat} data={d} maxTotal={maxCatTotal} />
+                  ))}
+              </div>
+              <div className="flex gap-3 mt-3 text-xs text-slate-500 flex-wrap">
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-[#22c55e] inline-block"/>Positive</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-[#f97316] inline-block"/>Negative</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-[#ef4444] inline-block"/>Complaint</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-[#6366f1] inline-block"/>Suggestion</span>
+              </div>
+            </Card>
           </div>
-          <div className="flex gap-3 mt-3 text-xs text-slate-500 flex-wrap">
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-[#22c55e] inline-block"/>Positive</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-[#f97316] inline-block"/>Negative</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-[#ef4444] inline-block"/>Complaint</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-[#6366f1] inline-block"/>Suggestion</span>
+
+          {/* ── Shop Performance ────────────────────────────────────────── */}
+          <SectionTitle>🏪 Outlet Performance</SectionTitle>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 mb-8">
+            {rankedShops.map((shop, i) => <ShopCard key={shop.id} shop={shop} rank={i + 1} />)}
           </div>
-        </Card>
-      </div>
 
-      {/* ── Shop Performance ──────────────────────────────────────────────── */}
-      <SectionTitle>🏪 Outlet Performance</SectionTitle>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-8">
-        {rankedShops.map((shop, i) => <ShopCard key={shop.id} shop={shop} rank={i + 1} />)}
-      </div>
+          <Divider />
 
-      <Divider />
+          {/* ── Top Issues + Top Suggestions ────────────────────────────── */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 mb-8">
 
-      {/* ── Top Issues + Top Suggestions ──────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-8">
-
-        {/* Top Issues */}
-        <Card>
-          <SectionTitle>🔴 Top Issues Requiring Attention</SectionTitle>
-          {topIssues.length === 0
-            ? <p className="text-slate-500 text-sm">No critical issues found 🎉</p>
-            : (
-              <div className="space-y-2">
-                {topIssues.map((issue, i) => (
-                  <div key={i} className="flex items-center gap-3 p-2.5 bg-[#131720] rounded-xl">
-                    <span className="text-base">{PRIORITY_EMOJI[issue.sentiment] ?? '🟢'}</span>
-                    <span className="text-base">{CATEGORY_EMOJI[issue.category] ?? '📌'}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-slate-200 capitalize truncate">{issue.subcategory}</p>
-                      <p className="text-xs text-slate-500 capitalize">{issue.category}</p>
-                    </div>
-                    <span className="text-sm font-bold shrink-0"
-                          style={{ color: issue.sentiment === 'complaint' ? '#ef4444' : '#f97316' }}>
-                      {issue.count}×
-                    </span>
+            {/* Top Issues */}
+            <Card>
+              <SectionTitle>🔴 Top Issues Requiring Attention</SectionTitle>
+              {topIssues.length === 0
+                ? <p className="text-slate-500 text-sm">No critical issues found 🎉</p>
+                : (
+                  <div className="space-y-2">
+                    {topIssues.map((issue, i) => (
+                      <div key={i} className={`flex items-center gap-3 p-2.5 ${insetCls} rounded-lg`}>
+                        <span className="text-base">{PRIORITY_EMOJI[issue.sentiment] ?? '🟢'}</span>
+                        <span className="text-base">{CATEGORY_EMOJI[issue.category] ?? '📌'}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-slate-800 capitalize break-words">{issue.subcategory}</p>
+                          <p className="text-xs text-slate-500 capitalize">{issue.category}</p>
+                        </div>
+                        <span className="text-sm font-bold shrink-0"
+                              style={{ color: issue.sentiment === 'complaint' ? '#ef4444' : '#f97316' }}>
+                          {issue.count}×
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
-        </Card>
+                )}
+            </Card>
 
-        {/* Top Suggestions */}
-        <Card>
-          <SectionTitle>💡 Top Customer Suggestions</SectionTitle>
-          {topSuggestions.length === 0
-            ? <p className="text-slate-500 text-sm">No suggestions recorded yet</p>
-            : (
-              <div className="space-y-2">
-                {topSuggestions.map((s, i) => (
-                  <div key={i} className="flex items-center gap-3 p-2.5 bg-[#131720] rounded-xl">
-                    <span className="text-base">💡</span>
-                    <span className="text-base">{CATEGORY_EMOJI[s.category] ?? '📌'}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-slate-200 capitalize truncate">{s.subcategory}</p>
-                      <p className="text-xs text-slate-500 capitalize">{s.category}</p>
-                    </div>
-                    <span className="text-sm font-bold text-[#6366f1] shrink-0">{s.count}×</span>
+            {/* Top Suggestions */}
+            <Card>
+              <SectionTitle>💡 Top Customer Suggestions</SectionTitle>
+              {topSuggestions.length === 0
+                ? <p className="text-slate-500 text-sm">No suggestions recorded yet</p>
+                : (
+                  <div className="space-y-2">
+                    {topSuggestions.map((s, i) => (
+                      <div key={i} className={`flex items-center gap-3 p-2.5 ${insetCls} rounded-lg`}>
+                        <span className="text-base">💡</span>
+                        <span className="text-base">{CATEGORY_EMOJI[s.category] ?? '📌'}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-slate-800 capitalize break-words">{s.subcategory}</p>
+                          <p className="text-xs text-slate-500 capitalize">{s.category}</p>
+                        </div>
+                        <span className="text-sm font-bold text-[#6366f1] shrink-0">{s.count}×</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
-        </Card>
+                )}
+            </Card>
+          </div>
+
+          {/* ── Trend + Rating Distribution ─────────────────────────────── */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 mb-8">
+
+            {/* Monthly Trend */}
+            <Card>
+              <SectionTitle>📈 Monthly Review Trend</SectionTitle>
+              <ResponsiveContainer width="100%" height={260}>
+                <LineChart data={trendData} margin={{ left: 0, right: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} />
+                  <XAxis dataKey="month" tick={{ fill: CHART_TICK, fontSize: 11 }} />
+                  <YAxis tick={{ fill: CHART_TICK, fontSize: 11 }} />
+                  <Tooltip contentStyle={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 8 }}
+                    labelStyle={{ color: '#0f172a' }} />
+                  <Line type="monotone" dataKey="count" stroke={DASHBOARD_ACCENT} strokeWidth={2.5}
+                    dot={{ fill: DASHBOARD_ACCENT, r: 4 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </Card>
+
+            {/* Rating Distribution */}
+            <Card>
+              <SectionTitle>⭐ Rating Distribution</SectionTitle>
+              {ratingDist.length === 0
+                ? <p className="text-slate-500 text-sm">No ratings collected yet</p>
+                : (
+                  <div className="space-y-1">
+                    {[5, 4, 3, 2, 1].map((star) => {
+                      const found = ratingDist.find((r) => r.rating === star)
+                      return <RatingBar key={star} rating={star} count={found?.count ?? 0} max={maxRating} />
+                    })}
+                  </div>
+                )}
+              {avgRating !== null && (
+                <div className="mt-4 pt-3 border-t border-slate-200 flex items-center justify-between">
+                  <span className="text-sm text-slate-500">Overall Average</span>
+                  <span className="text-lg font-bold text-yellow-400">⭐ {avgRating} / 5</span>
+                </div>
+              )}
+            </Card>
+          </div>
+
+          {/* ── Recent Reviews (full width) ─────────────────────────────── */}
+          <Card className="mb-8">
+            <SectionTitle>🕐 Recent Reviews</SectionTitle>
+            <ReviewFeed reviews={recentReviews} />
+          </Card>
+
+          <p className="text-center text-slate-700 text-xs mt-8">
+            📊 VoiceAgent · Customer Review Analytics · © {new Date().getFullYear()}
+          </p>
+        </>
+      )}
+
+      {tab === 'shops' && <ShopsPanel />}
       </div>
+    </div>
+  )
+}
 
-      {/* ── Trend + Rating Distribution ────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-8">
+// ── ShopsPanel ─────────────────────────────────────────────────────────────────
 
-        {/* Monthly Trend */}
-        <Card>
-          <SectionTitle>📈 Monthly Review Trend</SectionTitle>
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={trendData} margin={{ left: 0, right: 8 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" />
-              <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 11 }} />
-              <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} />
-              <Tooltip contentStyle={{ background: '#1a1f2e', border: 'none', borderRadius: 8 }}
-                labelStyle={{ color: '#e2e8f0' }} />
-              <Line type="monotone" dataKey="count" stroke="#6c8ef7" strokeWidth={2.5}
-                dot={{ fill: '#6c8ef7', r: 4 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </Card>
+interface ShopRow {
+  id: string
+  tenantId: string
+  name: string
+  city: string | null
+  state: string | null
+  town: string | null
+  address: string | null
+  phone: string | null
+  mobile: string | null
+  email: string | null
+  lat: number | null
+  lng: number | null
+  branchCode: string | null
+  createdAt: string
+}
 
-        {/* Rating Distribution */}
-        <Card>
-          <SectionTitle>⭐ Rating Distribution</SectionTitle>
-          {ratingDist.length === 0
-            ? <p className="text-slate-500 text-sm">No ratings collected yet</p>
-            : (
-              <div className="space-y-1">
-                {[5, 4, 3, 2, 1].map((star) => {
-                  const found = ratingDist.find((r) => r.rating === star)
-                  return <RatingBar key={star} rating={star} count={found?.count ?? 0} max={maxRating} />
-                })}
-              </div>
-            )}
-          {avgRating !== null && (
-            <div className="mt-4 pt-3 border-t border-[#2d3748] flex items-center justify-between">
-              <span className="text-sm text-slate-400">Overall Average</span>
-              <span className="text-lg font-bold text-yellow-400">⭐ {avgRating} / 5</span>
-            </div>
+// Shape of the edit form while the user is editing a shop
+interface EditFormState {
+  name: string
+  city: string
+  state: string
+  town: string
+  address: string
+  phone: string
+  mobile: string
+  email: string
+  lat: string
+  lng: string
+}
+
+function shopToForm(shop: ShopRow): EditFormState {
+  return {
+    name:    shop.name,
+    city:    shop.city    ?? '',
+    state:   shop.state   ?? '',
+    town:    shop.town    ?? '',
+    address: shop.address ?? '',
+    phone:   shop.phone   ?? '',
+    mobile:  shop.mobile  ?? '',
+    email:   shop.email   ?? '',
+    lat:     shop.lat     !== null ? String(shop.lat) : '',
+    lng:     shop.lng     !== null ? String(shop.lng) : '',
+  }
+}
+
+// ── Single shop card (view mode) ───────────────────────────────────────────────
+function ShopViewCard({
+  shop,
+  onEdit,
+}: {
+  shop: ShopRow
+  onEdit: () => void
+}) {
+  return (
+    <div className={`${surfaceCls} rounded-xl p-5 flex flex-col gap-3`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-slate-900 break-words">🏪 {shop.name}</p>
+          {shop.branchCode && (
+            <p className="text-xs text-slate-500 mt-0.5">Code: {shop.branchCode}</p>
           )}
-        </Card>
+        </div>
+        <button
+          onClick={onEdit}
+          className="shrink-0 px-3 py-1 bg-white hover:bg-blue-50 text-xs text-slate-600 hover:text-blue-700 rounded-lg transition-colors font-semibold border border-slate-200"
+        >
+          Edit
+        </button>
       </div>
 
-      {/* ── Recent Reviews (full width) ─────────────────────────────────────── */}
-      <Card className="mb-8">
-        <SectionTitle>🕐 Recent Reviews</SectionTitle>
-        <ReviewFeed reviews={recentReviews} />
-      </Card>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs text-slate-500">
+        {shop.state   && <span>📍 {shop.state}</span>}
+        {shop.city    && <span>🏙️ {shop.city}</span>}
+        {shop.town    && <span>🗺️ {shop.town}</span>}
+        {shop.address && <span className="sm:col-span-2 text-slate-600 break-words">{shop.address}</span>}
+        {shop.phone   && <span>📞 {shop.phone}</span>}
+        {shop.mobile  && <span>📱 {shop.mobile}</span>}
+        {shop.email   && <span className="sm:col-span-2 break-words">✉️ {shop.email}</span>}
+        {(shop.lat !== null && shop.lng !== null) && (
+          <span className="sm:col-span-2">
+            🌐 {shop.lat?.toFixed(5)}, {shop.lng?.toFixed(5)}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
 
-      <p className="text-center text-slate-700 text-xs mt-8">
-        📊 VoiceAgent · Customer Review Analytics · © {new Date().getFullYear()}
-      </p>
+// ── Single shop card (edit mode) ───────────────────────────────────────────────
+function ShopEditCard({
+  shop,
+  onSaved,
+  onCancel,
+}: {
+  shop: ShopRow
+  onSaved: (updated: ShopRow) => void
+  onCancel: () => void
+}) {
+  const [form, setForm]       = useState<EditFormState>(shopToForm(shop))
+  const [saving, setSaving]   = useState(false)
+  const [toast, setToast]     = useState(false)
+  const [errMsg, setErrMsg]   = useState<string | null>(null)
+
+  // Derive city list based on selected state
+  const cityOptions: string[] = form.state ? (CITIES_BY_PROVINCE[form.state] ?? []) : []
+  const freeCityInput = cityOptions.length === 0
+
+  function set(field: keyof EditFormState) {
+    return (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+      setForm((prev) => ({ ...prev, [field]: e.target.value }))
+    }
+  }
+
+  // If state changes, reset city only if the current city is not in the new list
+  function handleStateChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const newState = e.target.value
+    const newCities = CITIES_BY_PROVINCE[newState] ?? []
+    setForm((prev) => ({
+      ...prev,
+      state: newState,
+      city: newCities.includes(prev.city) ? prev.city : '',
+    }))
+  }
+
+  function detectLocation() {
+    if (!navigator.geolocation) return
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setForm((prev) => ({
+          ...prev,
+          lat: String(pos.coords.latitude),
+          lng: String(pos.coords.longitude),
+        }))
+      },
+      () => { /* ignore errors silently */ },
+    )
+  }
+
+  async function handleSave() {
+    setSaving(true)
+    setErrMsg(null)
+    try {
+      const res = await fetch(`/api/shops/${shop.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name:    form.name,
+          city:    form.city,
+          state:   form.state,
+          town:    form.town,
+          address: form.address,
+          phone:   form.phone,
+          mobile:  form.mobile,
+          email:   form.email,
+          lat:     form.lat,
+          lng:     form.lng,
+        }),
+      })
+      const data = await res.json() as ShopRow & { error?: string }
+      if (!res.ok) {
+        setErrMsg(data.error ?? 'Save failed')
+        return
+      }
+      onSaved(data)
+      setToast(true)
+      setTimeout(() => setToast(false), 2500)
+    } catch {
+      setErrMsg('Network error. Please try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const shopInputCls = 'w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-600 transition-colors'
+  const labelCls = 'block text-xs text-slate-600 mb-1'
+
+  return (
+    <div className={`${surfaceCls} rounded-xl p-5 flex flex-col gap-4 ring-4 ring-blue-50`}>
+      {/* Success toast */}
+      {toast && (
+        <div className="bg-green-50 border border-green-200 text-green-700 text-sm px-4 py-2 rounded-lg text-center">
+          Saved!
+        </div>
+      )}
+      {errMsg && (
+        <p className="text-sm text-red-600">{errMsg}</p>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Name */}
+        <div>
+          <label className={labelCls}>Name</label>
+          <input type="text" value={form.name} onChange={set('name')} className={shopInputCls} />
+        </div>
+
+        {/* Branch Code — readonly */}
+        <div>
+          <label className={labelCls}>Branch Code</label>
+          <input type="text" value={shop.branchCode ?? ''} disabled readOnly className={`${shopInputCls} opacity-60 cursor-not-allowed bg-slate-50`} />
+        </div>
+
+        {/* State/Province */}
+        <div>
+          <label className={labelCls}>Province / State</label>
+          <select value={form.state} onChange={handleStateChange} className={shopInputCls}>
+            <option value="">— Select province —</option>
+            {PROVINCES.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* City — dropdown if province has cities, otherwise free text */}
+        <div>
+          <label className={labelCls}>City</label>
+          {freeCityInput ? (
+            <input type="text" value={form.city} onChange={set('city')} placeholder="Enter city" className={shopInputCls} />
+          ) : (
+            <select value={form.city} onChange={set('city')} className={shopInputCls}>
+              <option value="">— Select city —</option>
+              {cityOptions.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {/* Town */}
+        <div>
+          <label className={labelCls}>Town / Area</label>
+          <input type="text" value={form.town} onChange={set('town')} placeholder="e.g. Model Town" className={shopInputCls} />
+        </div>
+
+        {/* Phone */}
+        <div>
+          <label className={labelCls}>Phone</label>
+          <input type="text" value={form.phone} onChange={set('phone')} placeholder="+92 XX XXXXXXX" className={shopInputCls} />
+        </div>
+
+        {/* Mobile */}
+        <div>
+          <label className={labelCls}>Mobile</label>
+          <input type="text" value={form.mobile} onChange={set('mobile')} placeholder="+92 3XX XXXXXXX" className={shopInputCls} />
+        </div>
+
+        {/* Email */}
+        <div>
+          <label className={labelCls}>Email</label>
+          <input type="email" value={form.email} onChange={set('email')} placeholder="shop@example.com" className={shopInputCls} />
+        </div>
+
+        {/* Address — full width */}
+        <div className="sm:col-span-2">
+          <label className={labelCls}>Address</label>
+          <textarea rows={2} value={form.address} onChange={set('address')} placeholder="Street address" className={shopInputCls} />
+        </div>
+
+        {/* Latitude */}
+        <div>
+          <label className={labelCls}>Latitude</label>
+          <input type="number" step="0.000001" value={form.lat} onChange={set('lat')} placeholder="e.g. 33.6844" className={shopInputCls} />
+        </div>
+
+        {/* Longitude */}
+        <div>
+          <label className={labelCls}>Longitude</label>
+          <input type="number" step="0.000001" value={form.lng} onChange={set('lng')} placeholder="e.g. 73.0479" className={shopInputCls} />
+        </div>
+
+        {/* Detect location button — full width */}
+        <div className="sm:col-span-2">
+          <button
+            type="button"
+            onClick={detectLocation}
+            className="px-4 py-2 bg-white hover:bg-slate-50 text-xs text-slate-700 rounded-lg border border-slate-300 transition-colors"
+          >
+            📍 Detect Location
+          </button>
+        </div>
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex gap-3 pt-1 flex-wrap">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-sm font-semibold rounded-lg transition-colors"
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          onClick={onCancel}
+          disabled={saving}
+          className="px-5 py-2 bg-white hover:bg-slate-50 text-sm text-slate-700 rounded-lg border border-slate-300 transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── ShopsPanel — fetches shops and renders the grid ───────────────────────────
+function ShopsPanel() {
+  const [shops, setShops]     = useState<ShopRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editingId, setEditingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/shops')
+      .then((r) => r.json())
+      .then((data: ShopRow[]) => setShops(data))
+      .catch(() => { /* silently fail — shops will just remain empty */ })
+      .finally(() => setLoading(false))
+  }, [])
+
+  function handleSaved(updated: ShopRow) {
+    setShops((prev) => prev.map((s) => (s.id === updated.id ? updated : s)))
+    setEditingId(null)
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-3 py-16 text-slate-400 text-sm justify-center">
+        <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        Loading shops…
+      </div>
+    )
+  }
+
+  if (shops.length === 0) {
+    return (
+      <div className="py-16 text-center">
+        <p className="text-slate-400 text-sm">No shops found.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <SectionTitle>🏪 Shop Management</SectionTitle>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+        {shops.map((shop) =>
+          editingId === shop.id ? (
+            <ShopEditCard
+              key={shop.id}
+              shop={shop}
+              onSaved={handleSaved}
+              onCancel={() => setEditingId(null)}
+            />
+          ) : (
+            <ShopViewCard
+              key={shop.id}
+              shop={shop}
+              onEdit={() => setEditingId(shop.id)}
+            />
+          ),
+        )}
+      </div>
     </div>
   )
 }

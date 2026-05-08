@@ -22,9 +22,9 @@ export function AnimatedAvatar({ phase, size = 'lg', color = '#00F5FF' }: Avatar
       {size === 'lg' && (
         <div className="absolute inset-0 rounded-full pointer-events-none"
              style={{
-               background: `radial-gradient(circle, ${color}22 0%, transparent 70%)`,
-               filter: 'blur(16px)',
-               transform: 'scale(1.8)',
+               background: `radial-gradient(circle, ${color}55 0%, transparent 70%)`,
+               filter: 'blur(24px)',
+               transform: 'scale(2.0)',
              }} />
       )}
 
@@ -34,16 +34,16 @@ export function AnimatedAvatar({ phase, size = 'lg', color = '#00F5FF' }: Avatar
           ${isSpeaking ? 'robot26-spin-fast' : 'robot26-spin-slow'}`}
           style={{
             width: dim + 36, height: dim + 36,
-            borderColor: color + '88',
-            boxShadow: `0 0 12px ${color}55, 0 0 28px ${color}22, inset 0 0 12px ${color}14`,
+            borderColor: color + 'BB',
+            boxShadow: `0 0 18px ${color}77, 0 0 36px ${color}33, inset 0 0 14px ${color}22`,
           }} />
         <div className={`absolute robot26-hex-ring robot26-ring-2
           ${isListening ? 'robot26-spin-fast' : 'robot26-spin-slow'}`}
           style={{
             width: dim + 64, height: dim + 64,
             animationDirection: 'reverse',
-            borderColor: color + '44',
-            boxShadow: `0 0 16px ${color}33, 0 0 40px ${color}18`,
+            borderColor: color + '66',
+            boxShadow: `0 0 22px ${color}44, 0 0 50px ${color}22`,
           }} />
       </>}
 
@@ -80,13 +80,13 @@ export function AnimatedAvatar({ phase, size = 'lg', color = '#00F5FF' }: Avatar
         <svg viewBox="0 0 160 160" width={dim} height={dim} xmlns="http://www.w3.org/2000/svg">
           <defs>
             <radialGradient id="r26bg" cx="50%" cy="30%" r="70%">
-              <stop offset="0%"  stopColor="#070F1F"/>
-              <stop offset="100%" stopColor="#020509"/>
+              <stop offset="0%"  stopColor="#0C1A30"/>
+              <stop offset="100%" stopColor="#050C1C"/>
             </radialGradient>
             <linearGradient id="r26head" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%"  stopColor="#0D1E35"/>
-              <stop offset="50%" stopColor="#091525"/>
-              <stop offset="100%" stopColor="#050D18"/>
+              <stop offset="0%"  stopColor="#162840"/>
+              <stop offset="50%" stopColor="#0D1D32"/>
+              <stop offset="100%" stopColor="#071320"/>
             </linearGradient>
             <linearGradient id="r26edge" x1="0%" y1="0%" x2="0%" y2="100%">
               <stop offset="0%"  stopColor={color}    stopOpacity="0.9"/>
@@ -99,7 +99,7 @@ export function AnimatedAvatar({ phase, size = 'lg', color = '#00F5FF' }: Avatar
               <stop offset="100%" stopColor="#001833"/>
             </linearGradient>
             <radialGradient id="r26glow" cx="50%" cy="50%" r="50%">
-              <stop offset="0%"  stopColor={color} stopOpacity="0.25"/>
+              <stop offset="0%"  stopColor={color} stopOpacity="0.45"/>
               <stop offset="100%" stopColor={color} stopOpacity="0"/>
             </radialGradient>
             <filter id="r26blur" x="-40%" y="-40%" width="180%" height="180%">
@@ -136,7 +136,7 @@ export function AnimatedAvatar({ phase, size = 'lg', color = '#00F5FF' }: Avatar
                 className={isSpeaking || isListening ? 'robot26-edge-pulse' : ''}/>
 
           {/* ── Surface grid ──────────────────────────────────────────────── */}
-          <g clipPath="url(#r26headClip)" stroke={color} strokeOpacity="0.04"
+          <g clipPath="url(#r26headClip)" stroke={color} strokeOpacity="0.07"
              strokeWidth="0.6" fill="none">
             {[35, 50, 65, 80, 95, 110, 125].map(y => (
               <line key={y} x1="30" y1={y} x2="130" y2={y}/>
@@ -148,26 +148,26 @@ export function AnimatedAvatar({ phase, size = 'lg', color = '#00F5FF' }: Avatar
 
           {/* ── Antenna ───────────────────────────────────────────────────── */}
           <line x1="80" y1="22" x2="80" y2="8"
-                stroke={color} strokeWidth="1.5" strokeOpacity="0.6"/>
+                stroke={color} strokeWidth="1.8" strokeOpacity="0.85"/>
           <rect x="75" y="4" width="10" height="5" rx="2"
-                fill="#050D18" stroke={color} strokeWidth="0.8" strokeOpacity="0.7"/>
+                fill="#071320" stroke={color} strokeWidth="1" strokeOpacity="0.90"/>
           <rect x="77" y="5" width="6" height="3" rx="1"
-                fill={color} fillOpacity="0.8" filter="url(#r26blur)"
+                fill={color} fillOpacity="1.0" filter="url(#r26blur)"
                 className="robot26-antenna"/>
 
           {/* ── Side vents ────────────────────────────────────────────────── */}
           {[72, 80, 88].map(y => (
             <g key={y}>
               <line x1="33" y1={y} x2="40" y2={y}
-                    stroke={color} strokeWidth="1" strokeOpacity="0.3"/>
+                    stroke={color} strokeWidth="1.2" strokeOpacity="0.55"/>
               <line x1="120" y1={y} x2="127" y2={y}
-                    stroke={color} strokeWidth="1" strokeOpacity="0.3"/>
+                    stroke={color} strokeWidth="1.2" strokeOpacity="0.55"/>
             </g>
           ))}
 
           {/* ── Forehead data strip ───────────────────────────────────────── */}
           <rect x="48" y="30" width="64" height="6" rx="2"
-                fill="#03080F" stroke={color} strokeWidth="0.6" strokeOpacity="0.3"/>
+                fill="#060E1C" stroke={color} strokeWidth="0.8" strokeOpacity="0.55"/>
           {[51, 59, 67, 75, 83, 91, 99].map((x, i) => (
             <rect key={i} x={x} y="31.5" width="5" height="3" rx="1"
                   fill={color}
@@ -176,7 +176,7 @@ export function AnimatedAvatar({ phase, size = 'lg', color = '#00F5FF' }: Avatar
 
           {/* ── VISOR ─────────────────────────────────────────────────────── */}
           <rect x="40" y="54" width="80" height="26" rx="5"
-                fill="#010812" stroke={color} strokeWidth="0.8" strokeOpacity="0.5"/>
+                fill="#010812" stroke={color} strokeWidth="1.2" strokeOpacity="0.75"/>
           <rect x="41" y="55" width="78" height="24" rx="4"
                 fill="url(#r26visor)"/>
           <rect x="41" y="55" width="78" height="8" rx="4"
@@ -185,10 +185,10 @@ export function AnimatedAvatar({ phase, size = 'lg', color = '#00F5FF' }: Avatar
           {/* IDLE — scan line */}
           {!isSpeaking && !isListening && !isThinking && (
             <g filter="url(#r26blur)">
-              <rect x="41" y="63" width="78" height="1" rx="0.5"
-                    fill={color} fillOpacity="0.15"/>
-              <rect className="robot26-scan-line" x="41" y="55" width="8" height="24" rx="2"
-                    fill={color} fillOpacity="0.18"/>
+              <rect x="41" y="63" width="78" height="1.5" rx="0.5"
+                    fill={color} fillOpacity="0.35"/>
+              <rect className="robot26-scan-line" x="41" y="55" width="10" height="24" rx="2"
+                    fill={color} fillOpacity="0.40"/>
             </g>
           )}
 
@@ -252,15 +252,15 @@ export function AnimatedAvatar({ phase, size = 'lg', color = '#00F5FF' }: Avatar
 
           {/* ── Cheek panels ─────────────────────────────────────────────── */}
           <rect x="34" y="86" width="18" height="22" rx="3"
-                fill="#070F1F" stroke={color} strokeWidth="0.6" strokeOpacity="0.25"/>
+                fill="#0A1628" stroke={color} strokeWidth="0.8" strokeOpacity="0.45"/>
           <rect x="108" y="86" width="18" height="22" rx="3"
-                fill="#070F1F" stroke={color} strokeWidth="0.6" strokeOpacity="0.25"/>
+                fill="#0A1628" stroke={color} strokeWidth="0.8" strokeOpacity="0.45"/>
           {[89, 95, 101].map(y => (
             <g key={y}>
               <line x1="37" y1={y} x2="49" y2={y}
-                    stroke={color} strokeWidth="0.8" strokeOpacity="0.2"/>
+                    stroke={color} strokeWidth="1" strokeOpacity="0.40"/>
               <line x1="111" y1={y} x2="123" y2={y}
-                    stroke={color} strokeWidth="0.8" strokeOpacity="0.2"/>
+                    stroke={color} strokeWidth="1" strokeOpacity="0.40"/>
             </g>
           ))}
 
@@ -271,8 +271,8 @@ export function AnimatedAvatar({ phase, size = 'lg', color = '#00F5FF' }: Avatar
           {/* Idle mouth — LED strip curve */}
           {!isSpeaking && !isThinking && !isListening && (
             <path d="M56,106 Q80,112 104,106"
-                  stroke={color} strokeWidth="1.5" fill="none"
-                  strokeLinecap="round" strokeOpacity="0.7"
+                  stroke={color} strokeWidth="2" fill="none"
+                  strokeLinecap="round" strokeOpacity="0.90"
                   filter="url(#r26blur)"/>
           )}
 
@@ -310,12 +310,12 @@ export function AnimatedAvatar({ phase, size = 'lg', color = '#00F5FF' }: Avatar
           {/* ── Corner screws ─────────────────────────────────────────────── */}
           {[[40, 30], [120, 30], [40, 128], [120, 128]].map(([cx, cy], i) => (
             <g key={i}>
-              <circle cx={cx} cy={cy} r="3.5" fill="#050D18"
-                      stroke={color} strokeWidth="0.6" strokeOpacity="0.3"/>
+              <circle cx={cx} cy={cy} r="3.5" fill="#071320"
+                      stroke={color} strokeWidth="0.8" strokeOpacity="0.60"/>
               <line x1={cx - 1.5} y1={cy} x2={cx + 1.5} y2={cy}
-                    stroke={color} strokeWidth="0.5" strokeOpacity="0.4"/>
+                    stroke={color} strokeWidth="0.7" strokeOpacity="0.70"/>
               <line x1={cx} y1={cy - 1.5} x2={cx} y2={cy + 1.5}
-                    stroke={color} strokeWidth="0.5" strokeOpacity="0.4"/>
+                    stroke={color} strokeWidth="0.7" strokeOpacity="0.70"/>
             </g>
           ))}
 

@@ -115,9 +115,25 @@ export async function POST(req: NextRequest) {
 
         let accumulated    = ''
         let sentenceBuffer = ''
+        let finalEmitted   = false
+
+        function emitFinal() {
+          if (finalEmitted) return
+          finalEmitted = true
+          const tail = stripTokens(sentenceBuffer.trim())
+          if (tail.length > 0) controller.enqueue(send({ sentence: tail }))
+          const lead    = extractToken<Record<string, string | null>>(accumulated, 'LEAD')
+          const review  = extractToken<Record<string, unknown>>(accumulated, 'REVIEW')
+          const endCall = accumulated.includes('[END_CALL]')
+          const cleaned = stripTokens(accumulated)
+          if (lead)   controller.enqueue(send({ lead }))
+          if (review) controller.enqueue(send({ review }))
+          controller.enqueue(send({ done: true, fullText: cleaned, endCall }))
+          controller.close()
+        }
 
         for await (const chunk of completion) {
-          const token       = chunk.choices[0]?.delta?.content ?? ''
+          const token        = chunk.choices[0]?.delta?.content ?? ''
           const finishReason = chunk.choices[0]?.finish_reason
 
           if (token) {
@@ -133,22 +149,12 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          if (finishReason === 'stop') {
-            const tail = stripTokens(sentenceBuffer.trim())
-            if (tail.length > 0) controller.enqueue(send({ sentence: tail }))
-
-            const lead     = extractToken<Record<string, string | null>>(accumulated, 'LEAD')
-            const review   = extractToken<Record<string, unknown>>(accumulated, 'REVIEW')
-            const endCall  = accumulated.includes('[END_CALL]')
-            const cleaned  = stripTokens(accumulated)
-            const fullText = cleaned
-
-            if (lead)   controller.enqueue(send({ lead }))
-            if (review) controller.enqueue(send({ review }))
-            controller.enqueue(send({ done: true, fullText, endCall }))
-            controller.close()
-          }
+          // Emit done on any finish reason (stop, length, content_filter, etc.)
+          if (finishReason) emitFinal()
         }
+
+        // Fallback: stream exhausted without a finish_reason chunk
+        emitFinal()
       } catch (err) {
         console.error('[chat]', err)
         const msg = String(err).includes('429')

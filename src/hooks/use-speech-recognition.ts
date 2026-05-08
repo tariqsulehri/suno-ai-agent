@@ -8,8 +8,9 @@ interface SR {
   continuous: boolean
   interimResults: boolean
   maxAlternatives: number
-  start(): void
-  stop(): void
+  start():  void
+  stop():   void
+  abort():  void
   onstart:  (() => void) | null
   onresult: ((ev: SREvent) => void) | null
   onerror:  ((ev: { error: string }) => void) | null
@@ -78,6 +79,23 @@ export function useSpeechRecognition({
     setIsSupported(
       !!((window as SRWindow).SpeechRecognition ?? (window as SRWindow).webkitSpeechRecognition)
     )
+  }, [])
+
+  // On unmount: null all handlers BEFORE aborting so Chrome's internal speech
+  // service message channel is closed immediately rather than left in an
+  // "awaiting async response" state — which is what generates the
+  // "message channel closed" console error.
+  useEffect(() => {
+    return () => {
+      const rec = recRef.current
+      if (!rec) return
+      rec.onstart  = null
+      rec.onresult = null
+      rec.onerror  = null
+      rec.onend    = null   // prevent onTranscript firing after unmount
+      try { rec.abort() } catch { /* ignore */ }
+      recRef.current = null
+    }
   }, [])
 
   const stop = useCallback(() => {

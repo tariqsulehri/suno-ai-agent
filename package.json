@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "cli:voice": "tsx src/cli/voice.ts",
-    "cli:text": "tsx src/cli/text.ts"
+    "cli:text": "tsx src/cli/text.ts",
+    "postinstall": "npm rebuild better-sqlite3"
   },
   "dependencies": {
     "@elevenlabs/elevenlabs-js": "^2.0.0",

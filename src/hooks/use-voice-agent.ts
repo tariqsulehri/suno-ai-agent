@@ -243,12 +243,15 @@ export function useVoiceAgent({
           }
           if (event.done) {
             receivedDone = true
-            const fullText = String(event.fullText ?? '')
-            const endCall  = Boolean(event.endCall)
+            const fullText  = String(event.fullText ?? '')
+            const endCall   = Boolean(event.endCall)
+            const isPositive = reviewRef.current.sentiment === 'positive'
             historyRef.current.push({ role: 'assistant', content: fullText })
 
             if (endCall) {
-              await saveCallSummary(dispatchFn)
+              // Positive: save to DB but skip LLM summarization (no follow-up needed)
+              // Others:   full LLM summary + email + DB persist
+              await saveCallSummary(dispatchFn, isPositive)
             }
 
             dispatchFn?.({ type: 'REPLY_COMPLETE', fullText, endCall })
@@ -275,7 +278,9 @@ export function useVoiceAgent({
     }
   }
 
-  async function saveCallSummary(dispatchFn: typeof dispatch | null) {
+  // quick=true  → skip LLM summarization, just persist to DB (used for positive reviews)
+  // quick=false → full LLM summary + persist + email (used for complaints/negative/suggestion)
+  async function saveCallSummary(dispatchFn: typeof dispatch | null, quick = false) {
     const lead   = leadRef.current
     const review = reviewRef.current
 
@@ -283,7 +288,7 @@ export function useVoiceAgent({
       const res = await fetch('/api/summarize', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', ...embedHeadersRef.current },
-        body:    JSON.stringify({ messages: historyRef.current, lead, review }),
+        body:    JSON.stringify({ messages: historyRef.current, lead, review, quick }),
         signal:  networkAbortRef.current.signal,
       })
       const data = await res.json()

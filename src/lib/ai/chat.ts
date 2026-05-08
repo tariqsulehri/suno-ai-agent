@@ -28,8 +28,8 @@ export async function streamChatReply(
 
   return client.chat.completions.create({
     model:       CHAT_MODEL[provider],
-    max_tokens:  400,   // needs room for farewell + [END_CALL] + [REVIEW:...] + [LEAD:...]
-    temperature: 0.6,
+    max_tokens:  280,   // 2 visible sentences (~80 tokens) + hidden tokens (~180 tokens)
+    temperature: 0.5,   // lower = more consistent, less rambling
     stream:      true,
     messages: [
       { role: 'system', content: systemPrompt },

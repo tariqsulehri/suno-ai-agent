@@ -19,17 +19,33 @@ export async function POST(req: NextRequest) {
   let messages: ChatHistory
   let lead:   LeadData   = { name: null, email: null, phone: null, company: null, purpose: null }
   let review: ReviewData | null = null
+  let quick  = false
   try {
     const body = await req.json()
     messages = body.messages
     if (body.lead   && typeof body.lead   === 'object') lead   = body.lead
     if (body.review && typeof body.review === 'object') review = body.review
+    if (body.quick  === true) quick = true
     if (!Array.isArray(messages)) throw new Error()
   } catch {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
 
+  const shopCode   = req.headers.get('x-embed-shop') ?? ''
   const conversation = messages.filter((m) => m.content !== '__GREET__')
+
+  // quick=true: positive feedback — save to DB but skip LLM + email (no follow-up needed)
+  if (quick) {
+    const quickSummary: CallSummary = {
+      summary:   review?.subcategory
+        ? `Positive feedback: ${review.subcategory}.`
+        : 'Customer left positive feedback.',
+      keyPoints: [],
+      ...(review ? { review } : {}),
+    }
+    await persistReview({ tenant, lead, review, summary: quickSummary, messages, shopCode })
+    return NextResponse.json({ ...quickSummary, email: null })
+  }
 
   if (conversation.length < 2) {
     const briefSummary: CallSummary = {
@@ -37,9 +53,8 @@ export async function POST(req: NextRequest) {
       keyPoints: [],
       ...(review ? { review } : {}),
     }
-    const briefShopCode = req.headers.get('x-embed-shop') ?? ''
     const email = await sendCallSummaryEmail({ tenant, lead, summary: briefSummary, messages })
-    await persistReview({ tenant, lead, review, summary: briefSummary, messages, shopCode: briefShopCode })
+    await persistReview({ tenant, lead, review, summary: briefSummary, messages, shopCode })
     return NextResponse.json({ ...briefSummary, email })
   }
 
@@ -99,8 +114,6 @@ Return only valid JSON: { "summary": "...", "keyPoints": ["...", "..."] }`
   } catch (err) {
     console.error('[summarize] LLM failed — saving with fallback summary:', err)
   }
-
-  const shopCode = req.headers.get('x-embed-shop') ?? ''
 
   // Always persist and email regardless of whether LLM succeeded
   const [email] = await Promise.all([

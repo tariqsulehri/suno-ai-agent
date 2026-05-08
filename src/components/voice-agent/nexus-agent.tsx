@@ -8,10 +8,10 @@ import type { VoiceThemeName } from './theme-provider'
 
 // ── End-state messages per sentiment ──────────────────────────────────────────
 const END_MSG: Record<string, string> = {
+  positive:   'That genuinely made our day — thank you for taking the time!',
+  negative:   'Your feedback has been sent to our team.',
   complaint:  'Your complaint has been sent to our Customer Excellence Team.',
   suggestion: 'Your suggestion has been sent to our team.',
-  negative:   'Your feedback has been sent to our team.',
-  positive:   'Your feedback has been sent to our team. Thank you!',
 }
 
 // ── Mood palette ───────────────────────────────────────────────────────────────
@@ -67,6 +67,28 @@ interface Props { tenantId?: string; token?: string; shopCode?: string }
 export function NexusAgent(props: Props) {
   const [sessionKey, setSessionKey] = useState(0)
   const handleReset = useCallback(() => setSessionKey(k => k + 1), [])
+
+  // Chrome extensions that react to microphone / SpeechRecognition activity
+  // (Grammarly, Google Translate, Speechify, etc.) use chrome.runtime messaging
+  // internally. When their service-worker channel closes during React re-renders
+  // Chrome logs an "Uncaught (in promise)" to the active tab's console even
+  // though the error originates entirely inside the extension, not our code.
+  // Intercepting unhandledrejection lets us suppress that noise while the
+  // voice agent is mounted without masking any errors from our own code.
+  useEffect(() => {
+    function suppressExtensionChannelNoise(e: PromiseRejectionEvent) {
+      const msg: string = e.reason?.message ?? ''
+      if (
+        msg.includes('message channel closed') ||
+        msg.includes('listener indicated an asynchronous response')
+      ) {
+        e.preventDefault()
+      }
+    }
+    window.addEventListener('unhandledrejection', suppressExtensionChannelNoise)
+    return () => window.removeEventListener('unhandledrejection', suppressExtensionChannelNoise)
+  }, [])
+
   return <NexusAgentInner key={sessionKey} {...props} onReset={handleReset} />
 }
 
@@ -82,9 +104,8 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
     agentName, companyName,
     language, setLanguage,
     reviewData, leadData,
-    liveTranscript, webSpeechSupported,
     toggleMic, endCall,
-  } = useVoiceAgent({ tenantId, token, shopCode, defaultOutputMode: 'voice', webSpeech: true, browserTts: false })
+  } = useVoiceAgent({ tenantId, token, shopCode, defaultOutputMode: 'voice', webSpeech: false, browserTts: false })
 
   const transcriptRef = useRef<HTMLDivElement>(null)
   const timerRef      = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -156,9 +177,15 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
   }, [isRecording, toggleMic])
 
   // End-call flow: sending → confirmed → auto-reset
+  // Positive feedback skips the "Sending" step — nothing to follow up on.
   useEffect(() => {
     if (phase !== 'ended') return
-    setEndStep('sending')
+
+    const isPositive = reviewData.sentiment === 'positive'
+
+    if (!isPositive) setEndStep('sending')
+
+    const confirmDelay = isPositive ? 0 : 5000
 
     endTimerRef.current = setTimeout(() => {
       setEndStep('confirmed')
@@ -175,13 +202,13 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
           return s - 1
         })
       }, 1000)
-    }, 5000)
+    }, confirmDelay)
 
     return () => {
       if (endTimerRef.current)  clearTimeout(endTimerRef.current)
       if (resetTickRef.current) clearInterval(resetTickRef.current)
     }
-  }, [phase, onReset])
+  }, [phase, onReset, reviewData.sentiment])
 
   const color = reviewData.sentiment ? mc(reviewData.sentiment) : themeColor
   const ended = phase === 'ended'
@@ -258,15 +285,19 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
               </svg>
             </div>
 
-            <h1 className="nx-conf-title" style={{ color }}>Sent!</h1>
+            <h1 className="nx-conf-title" style={{ color }}>
+              {reviewData.sentiment === 'positive' ? 'Thank you!' : 'Sent!'}
+            </h1>
 
             <p className="nx-conf-msg">
               {END_MSG[reviewData.sentiment ?? ''] ?? 'Your message has been sent to our team.'}
             </p>
 
-            <p className="nx-conf-sub">We will reach out to you shortly.</p>
+            {reviewData.sentiment !== 'positive' && (
+              <p className="nx-conf-sub">We will reach out to you shortly.</p>
+            )}
 
-            {(leadData.name || leadData.phone) && (
+            {reviewData.sentiment !== 'positive' && (leadData.name || leadData.phone) && (
               <div className="nx-conf-contact" style={{ borderColor: color + '30' }}>
                 {leadData.name  && <span style={{ color }}>{leadData.name}</span>}
                 {leadData.phone && <span className="nx-ty-phone">{leadData.phone}</span>}
@@ -353,18 +384,6 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
             <p className="nx-status-txt" role="status" aria-live="polite">
               {error && phase === 'error' ? error : STATUS[phase]}
             </p>
-
-            {isRecording && liveTranscript && (
-              <p className="nx-live-txt" style={{ borderColor: color + '35', color: color + 'CC' }}>
-                {liveTranscript.length > 80
-                  ? '…' + liveTranscript.slice(-80)
-                  : liveTranscript}
-              </p>
-            )}
-
-            {!webSpeechSupported && (
-              <p className="nx-unsupported">⚠️ Voice input requires Chrome or Edge</p>
-            )}
           </div>
 
           {/* ── Mood indicator ───────────────────────────────────────────── */}

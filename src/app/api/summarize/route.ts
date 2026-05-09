@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getLLMClient, SUMMARY_MODEL, getProvider } from '@/lib/ai/client'
 import { requireEmbedApiAuth, getTenantFromRequest } from '@/lib/security/embed-auth'
 import { sendCallSummaryEmail } from '@/lib/email/call-summary'
+import { sendEscalationAlert } from '@/lib/email/escalation'
 import { db } from '@/lib/db/client'
 import { initVectorTable, upsertReviewVector } from '@/lib/db/vectors'
 import { embedReview } from '@/lib/ai/embed'
@@ -179,6 +180,20 @@ async function persistReview({
     embedReview(review, summary.summary, summary.keyPoints, tenant.openaiApiKey)
       .then((vec) => upsertReviewVector(created.id, vec))
       .catch((err) => console.error('[embed]', err))
+
+    // Fire escalation alert for complaints / low-rated negatives (non-blocking)
+    const isEscalation =
+      review?.sentiment === 'complaint' ||
+      (review?.sentiment === 'negative' && review.rating !== null && review.rating <= 2)
+    if (isEscalation) {
+      sendEscalationAlert({
+        tenant,
+        lead,
+        review,
+        shopName: shop.name,
+        summary:  summary.summary,
+      }).catch((err) => console.error('[escalation]', err))
+    }
 
   } catch (err) {
     console.error('[persist-review]', err)

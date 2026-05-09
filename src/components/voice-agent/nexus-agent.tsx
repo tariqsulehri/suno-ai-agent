@@ -103,7 +103,7 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
     isRecording,
     agentName, companyName,
     language, setLanguage,
-    reviewData, leadData,
+    reviewData, leadData, callSummary,
     toggleMic, endCall,
   } = useVoiceAgent({ tenantId, token, shopCode, defaultOutputMode: 'voice', webSpeech: false, browserTts: false })
 
@@ -176,39 +176,59 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
   }, [isRecording, toggleMic])
 
-  // End-call flow: sending → confirmed → auto-reset
-  // Positive feedback skips the "Sending" step — nothing to follow up on.
+  function startResetCountdown() {
+    setResetSecs(5)
+    resetTickRef.current = setInterval(() => {
+      setResetSecs(s => {
+        if (s <= 1) {
+          clearInterval(resetTickRef.current!)
+          resetTickRef.current = null
+          onReset()
+          return 0
+        }
+        return s - 1
+      })
+    }, 1000)
+  }
+
+  // Step 1 — phase transitions to 'ended': show sending screen (or skip for positive).
   useEffect(() => {
     if (phase !== 'ended') return
-
     const isPositive = reviewData.sentiment === 'positive'
-
-    if (!isPositive) setEndStep('sending')
-
-    const confirmDelay = isPositive ? 0 : 5000
-
-    endTimerRef.current = setTimeout(() => {
-      setEndStep('confirmed')
-      setResetSecs(5)
-
-      resetTickRef.current = setInterval(() => {
-        setResetSecs(s => {
-          if (s <= 1) {
-            clearInterval(resetTickRef.current!)
-            resetTickRef.current = null
-            onReset()
-            return 0
-          }
-          return s - 1
+    if (isPositive) {
+      // Positive: no send needed — go straight to confirmed after a brief settle
+      endTimerRef.current = setTimeout(() => {
+        setEndStep('confirmed')
+        startResetCountdown()
+      }, 400)
+    } else {
+      setEndStep('sending')
+      // Safety fallback: if API never responds, advance after 12 s
+      endTimerRef.current = setTimeout(() => {
+        setEndStep((s) => {
+          if (s === 'sending') { startResetCountdown(); return 'confirmed' }
+          return s
         })
-      }, 1000)
-    }, confirmDelay)
-
+      }, 12_000)
+    }
     return () => {
       if (endTimerRef.current)  clearTimeout(endTimerRef.current)
       if (resetTickRef.current) clearInterval(resetTickRef.current)
     }
-  }, [phase, onReset, reviewData.sentiment])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase])
+
+  // Step 2 — callSummary arrives from API: hold 2.5 s then show confirmed.
+  useEffect(() => {
+    if (endStep !== 'sending' || !callSummary) return
+    if (endTimerRef.current) clearTimeout(endTimerRef.current)  // cancel fallback
+    endTimerRef.current = setTimeout(() => {
+      setEndStep('confirmed')
+      startResetCountdown()
+    }, 2500)
+    return () => { if (endTimerRef.current) clearTimeout(endTimerRef.current) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [callSummary, endStep])
 
   const color = reviewData.sentiment ? mc(reviewData.sentiment) : themeColor
   const ended = phase === 'ended'
@@ -510,8 +530,8 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
                : 'Press to record your review'}
             </p>
 
-            {/* End Call — shown once at least one exchange has happened */}
-            {transcript.length > 0 && (
+            {/* End Call — shown only after the customer has spoken at least once */}
+            {transcript.some((m) => m.role === 'user') && (
               <button className="nx-end-btn" onClick={endCall} aria-label="End call">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none"
                      stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">

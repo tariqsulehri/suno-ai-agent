@@ -70,20 +70,29 @@ function getTopSuggestions(): { subcategory: string; category: string; count: nu
 
 function getRecentReviews(): {
   id: string; shopName: string; sentiment: string | null; category: string | null
-  subcategory: string | null; rating: number | null; summary: string | null; createdAt: string
+  subcategory: string | null; rating: number | null; summary: string | null
+  keyPoints: string | null; transcript: string | null; status: string
+  leadId: string | null; leadName: string | null; leadPhone: string | null; leadEmail: string | null
+  createdAt: string
 }[] {
   const raw = rawDb()
   try {
     return raw.prepare(`
       SELECT r.id, s.name AS shopName, r.sentiment, r.category,
-             r.subcategory, r.rating, r.summary, r.createdAt
+             r.subcategory, r.rating, r.summary, r.keyPoints, r.transcript,
+             r.status, r.createdAt,
+             l.id AS leadId, l.name AS leadName, l.phone AS leadPhone, l.email AS leadEmail
       FROM Review r
       JOIN Shop s ON r.shopId = s.id
+      LEFT JOIN Lead l ON l.reviewId = r.id
       ORDER BY r.createdAt DESC
-      LIMIT 6
+      LIMIT 50
     `).all() as {
       id: string; shopName: string; sentiment: string | null; category: string | null
-      subcategory: string | null; rating: number | null; summary: string | null; createdAt: string
+      subcategory: string | null; rating: number | null; summary: string | null
+      keyPoints: string | null; transcript: string | null; status: string
+      leadId: string | null; leadName: string | null; leadPhone: string | null; leadEmail: string | null
+      createdAt: string
     }[]
   } finally { raw.close() }
 }

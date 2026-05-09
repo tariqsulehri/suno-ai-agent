@@ -168,20 +168,29 @@ export function useVoiceAgent({
   const leadRef    = useRef<LeadData>(EMPTY_LEAD)
   const reviewRef  = useRef<ReviewData>(EMPTY_REVIEW)
 
+  // When the user clicks End Call while audio is playing, we don't cut mid-sentence.
+  // Instead we set this flag and let onPlaybackEnd complete the transition.
+  const endPendingRef = useRef(false)
+
+  function onPlaybackEnd() {
+    if (endPendingRef.current) {
+      endPendingRef.current = false
+      completeEndCall()
+    } else if (stateRef.current.phase === 'speaking') {
+      dispatch({ type: 'SPEAKING_DONE' })
+    }
+  }
+
   // ── TTS: API audio player (OpenAI/ElevenLabs) ────────────────────────────────
   const apiPlayer = useAudioPlayer({
     requestHeaders: embedHeaders,
-    onPlaybackEnd: () => {
-      if (stateRef.current.phase === 'speaking') dispatch({ type: 'SPEAKING_DONE' })
-    },
+    onPlaybackEnd,
   })
 
   // ── TTS: Browser SpeechSynthesis (free, no API) ───────────────────────────────
   const browserPlayer = useSpeechSynthesis({
     language,
-    onPlaybackEnd: () => {
-      if (stateRef.current.phase === 'speaking') dispatch({ type: 'SPEAKING_DONE' })
-    },
+    onPlaybackEnd,
   })
 
   // Use the right player based on flag
@@ -452,19 +461,34 @@ export function useVoiceAgent({
 
   // ── Manual end-call ───────────────────────────────────────────────────────────
   // Stops mic + playback, aborts any in-flight request, transitions to 'ended'
-  // phase immediately, then saves the call summary in the background.
-  const endCall = useCallback(() => {
-    if (isRecording) stopRec()
+  // Called once audio has finished (or immediately if nothing is playing).
+  // Transitions to 'ended' and fires the backend save.
+  function completeEndCall() {
     stopAll()
-    networkAbortRef.current.abort()
     dispatch({ type: 'REPLY_COMPLETE', fullText: '', endCall: true })
-    if (historyRef.current.length > 0) {
+    const hasUserTurn = historyRef.current.some(
+      (m) => m.role === 'user' && m.content !== '__GREET__'
+    )
+    if (hasUserTurn) {
       networkAbortRef.current = new AbortController()
       saveCallSummary(dispatch)
     }
-  // saveCallSummary only touches refs — any captured version works the same
+  }
+
+  // If the agent is mid-sentence, let it finish speaking before transitioning.
+  // We only kill the LLM stream (no new text) — existing audio plays to completion.
+  const endCall = useCallback(() => {
+    if (isRecording) stopRec()
+    networkAbortRef.current.abort()          // stop any incoming LLM stream
+
+    if (isPlayingRef.current) {
+      endPendingRef.current = true           // onPlaybackEnd will call completeEndCall
+    } else {
+      completeEndCall()
+    }
+  // completeEndCall / saveCallSummary only touch refs — stable across renders
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRecording, stopRec, stopAll])
+  }, [isRecording, stopRec])
 
   return {
     phase:              state.phase,

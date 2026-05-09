@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -243,37 +243,460 @@ function ShopCard({ shop, rank }: {
   )
 }
 
-// ── Recent Review Feed ─────────────────────────────────────────────────────────
-function ReviewFeed({ reviews }: { reviews: DashboardData['recentReviews'] }) {
+// ── Status badge + cycle button ────────────────────────────────────────────────
+const STATUS_META: Record<string, { label: string; color: string; next: string; nextLabel: string }> = {
+  pending:   { label: 'Pending',   color: '#f97316', next: 'contacted', nextLabel: 'Mark Contacted' },
+  contacted: { label: 'Contacted', color: '#2563eb', next: 'resolved',  nextLabel: 'Mark Resolved'  },
+  resolved:  { label: 'Resolved',  color: '#22c55e', next: 'pending',   nextLabel: 'Reopen'         },
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const meta = STATUS_META[status] ?? STATUS_META['pending']
   return (
-    <div className="space-y-3">
-      {reviews.map((r) => (
-        <div key={r.id} className={`flex gap-3 p-3 ${insetCls} rounded-lg`}>
-          <span className="text-xl mt-0.5 shrink-0">
-            {SENTIMENT_EMOJI[r.sentiment ?? ''] ?? '💬'}
-          </span>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
-              <div className="flex items-center gap-2 flex-wrap min-w-0">
-                <span className="text-xs font-semibold text-slate-800 break-words">🏪 {r.shopName}</span>
-                {r.category && (
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-white text-slate-600 border border-slate-200 capitalize">
-                    {CATEGORY_EMOJI[r.category]} {r.category}
-                  </span>
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold text-white"
+          style={{ background: meta.color }}>
+      {meta.label}
+    </span>
+  )
+}
+
+// ── Numeric phone pad ──────────────────────────────────────────────────────────
+const PAD_KEYS = [
+  ['1','2','3'],
+  ['4','5','6'],
+  ['7','8','9'],
+  ['+','0','⌫'],
+]
+
+function PhonePad({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  function press(k: string) {
+    if (k === '⌫') { onChange(value.slice(0, -1)); return }
+    if (value.length >= 16) return
+    onChange(value + k)
+  }
+  return (
+    <div className="select-none">
+      {/* Display */}
+      <div className="flex items-center gap-2 bg-slate-900 rounded-xl px-4 py-3 mb-3">
+        <span className="text-slate-400 text-sm">📞</span>
+        <span className="flex-1 text-white font-mono text-lg tracking-widest min-h-[1.5rem]">
+          {value || <span className="text-slate-500 text-sm font-sans">Enter number…</span>}
+        </span>
+        {value && (
+          <button onClick={() => onChange('')}
+            className="text-slate-500 hover:text-red-400 text-xs px-2 py-0.5 rounded transition-colors">
+            Clear
+          </button>
+        )}
+      </div>
+      {/* Keys */}
+      <div className="grid grid-cols-3 gap-2">
+        {PAD_KEYS.flat().map((k) => (
+          <button
+            key={k}
+            onClick={() => press(k)}
+            className={`py-3 rounded-xl text-base font-semibold transition-colors ${
+              k === '⌫'
+                ? 'bg-red-50 text-red-500 hover:bg-red-100 border border-red-200'
+                : 'bg-white border border-slate-200 text-slate-800 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 active:scale-95'
+            }`}
+          >
+            {k}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Edit Contact Panel ─────────────────────────────────────────────────────────
+function EditContactPanel({
+  review,
+  onSaved,
+  onCancel,
+}: {
+  review: ReviewRow
+  onSaved: (lead: { name: string | null; phone: string | null; email: string | null }) => void
+  onCancel: () => void
+}) {
+  const [name,   setName]   = useState(review.leadName  ?? '')
+  const [phone,  setPhone]  = useState(review.leadPhone ?? '')
+  const [email,  setEmail]  = useState(review.leadEmail ?? '')
+  const [saving, setSaving] = useState(false)
+  const [err,    setErr]    = useState<string | null>(null)
+  const [ok,     setOk]     = useState(false)
+
+  async function save() {
+    if (!review.leadId) { setErr('No contact record to update'); return }
+    setSaving(true); setErr(null)
+    try {
+      const res = await fetch(`/api/leads/${review.leadId}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ name, phone, email }),
+      })
+      if (!res.ok) { setErr('Save failed'); return }
+      const data = await res.json()
+      setOk(true)
+      setTimeout(() => onSaved({ name: data.name, phone: data.phone, email: data.email }), 600)
+    } catch { setErr('Network error') }
+    finally { setSaving(false) }
+  }
+
+  const fieldCls = 'w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-500 transition-colors'
+
+  return (
+    <div className="space-y-4">
+      {ok && (
+        <div className="bg-green-50 border border-green-200 text-green-700 text-sm text-center px-4 py-2 rounded-xl">
+          Saved!
+        </div>
+      )}
+      {err && <p className="text-red-500 text-sm">{err}</p>}
+
+      <div>
+        <label className="block text-xs text-slate-500 mb-1 font-semibold">👤 Name</label>
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Customer name"
+          className={fieldCls} />
+      </div>
+
+      <div>
+        <label className="block text-xs text-slate-500 mb-2 font-semibold">📞 Phone</label>
+        <PhonePad value={phone} onChange={setPhone} />
+      </div>
+
+      <div>
+        <label className="block text-xs text-slate-500 mb-1 font-semibold">✉️ Email</label>
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="customer@example.com"
+          className={fieldCls} />
+      </div>
+
+      <div className="flex gap-2 pt-1">
+        <button onClick={save} disabled={saving || ok}
+          className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-sm font-semibold rounded-xl transition-colors">
+          {saving ? 'Saving…' : 'Save Contact'}
+        </button>
+        <button onClick={onCancel} disabled={saving}
+          className="px-4 py-2.5 bg-white border border-slate-300 text-slate-700 text-sm font-semibold rounded-xl hover:bg-slate-50 transition-colors">
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Transcript Modal ───────────────────────────────────────────────────────────
+type ReviewRow = DashboardData['recentReviews'][0]
+
+function TranscriptModal({
+  review,
+  onClose,
+  onStatusChange,
+  onLeadChange,
+}: {
+  review: ReviewRow
+  onClose: () => void
+  onStatusChange: (id: string, status: string) => void
+  onLeadChange:   (id: string, lead: { name: string | null; phone: string | null; email: string | null }) => void
+}) {
+  const [status,    setStatus]    = useState(review.status)
+  const [saving,    setSaving]    = useState(false)
+  const [editLead,  setEditLead]  = useState(false)
+  const [lead,      setLead]      = useState({
+    name:  review.leadName,
+    phone: review.leadPhone,
+    email: review.leadEmail,
+  })
+
+  async function cycleStatus() {
+    const next = STATUS_META[status]?.next ?? 'pending'
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/reviews/${review.id}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ status: next }),
+      })
+      if (res.ok) { setStatus(next); onStatusChange(review.id, next) }
+    } finally { setSaving(false) }
+  }
+
+  function handleLeadSaved(updated: { name: string | null; phone: string | null; email: string | null }) {
+    setLead(updated)
+    setEditLead(false)
+    onLeadChange(review.id, updated)
+  }
+
+  const messages: Array<{ role: string; content: string }> = (() => {
+    try { return JSON.parse(review.transcript ?? '[]') } catch { return [] }
+  })().filter((m: { role: string; content: string }) => m.content !== '__GREET__')
+
+  const keyPoints: string[] = (() => {
+    try { return JSON.parse(review.keyPoints ?? '[]') } catch { return [] }
+  })()
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2 sm:p-4"
+         onClick={onClose}>
+      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+
+      <div className="relative z-10 w-full max-w-2xl max-h-[90dvh] flex flex-col bg-white rounded-2xl shadow-2xl overflow-hidden"
+           onClick={(e) => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3 p-5 border-b border-slate-200 shrink-0">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xl">{SENTIMENT_EMOJI[review.sentiment ?? ''] ?? '💬'}</span>
+              <span className="text-sm font-bold text-slate-900 break-words">🏪 {review.shopName}</span>
+              {review.category && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 capitalize border border-slate-200">
+                  {CATEGORY_EMOJI[review.category]} {review.category}
+                </span>
+              )}
+              {review.rating && (
+                <span className="text-xs text-yellow-500 font-semibold">{RATING_EMOJI[review.rating]} {review.rating}★</span>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              {new Date(review.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
+              {review.subcategory && ` · ${review.subcategory}`}
+            </p>
+          </div>
+          <button onClick={onClose}
+            className="shrink-0 text-slate-400 hover:text-slate-600 text-xl leading-none p-1">✕</button>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="overflow-y-auto flex-1 p-5 space-y-5">
+
+          {/* Contact + Status row */}
+          <div className="flex flex-col sm:flex-row gap-4">
+
+            {/* Contact card */}
+            <div className={`flex-1 ${insetCls} rounded-xl p-4`}>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Customer Contact</p>
+                {review.leadId && !editLead && (
+                  <button onClick={() => setEditLead(true)}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-semibold px-2 py-0.5 rounded-lg hover:bg-blue-50 transition-colors">
+                    ✏️ Edit
+                  </button>
                 )}
               </div>
-              <div className="flex items-center gap-2">
-                {r.rating && <span className="text-xs text-yellow-400">{RATING_EMOJI[r.rating]} {r.rating}★</span>}
-                <span className="text-xs text-slate-600">
-                  {new Date(r.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                </span>
+
+              {editLead ? (
+                <EditContactPanel
+                  review={{ ...review, leadName: lead.name, leadPhone: lead.phone, leadEmail: lead.email }}
+                  onSaved={handleLeadSaved}
+                  onCancel={() => setEditLead(false)}
+                />
+              ) : (lead.name || lead.phone || lead.email) ? (
+                <div className="space-y-2">
+                  {lead.name && <p className="text-sm text-slate-800">👤 {lead.name}</p>}
+                  {lead.phone && (
+                    <p className="text-sm text-slate-800 flex items-center gap-2">
+                      📞 <button onClick={() => navigator.clipboard.writeText(lead.phone!)}
+                        className="text-blue-600 hover:underline font-mono" title="Tap to copy">
+                        {lead.phone}
+                      </button>
+                    </p>
+                  )}
+                  {lead.email && (
+                    <p className="text-sm text-slate-800 flex items-center gap-2 break-words">
+                      ✉️ <button onClick={() => navigator.clipboard.writeText(lead.email!)}
+                        className="text-blue-600 hover:underline break-all" title="Tap to copy">
+                        {lead.email}
+                      </button>
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 italic">No contact details provided</p>
+              )}
+            </div>
+
+            {/* Status card */}
+            {!editLead && (
+              <div className={`flex-1 ${insetCls} rounded-xl p-4 flex flex-col gap-3`}>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Follow-up Status</p>
+                <StatusBadge status={status} />
+                <button onClick={cycleStatus} disabled={saving}
+                  className="mt-auto px-3 py-2 text-xs font-semibold rounded-lg bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-40 transition-colors">
+                  {saving ? 'Saving…' : STATUS_META[status]?.nextLabel ?? 'Update'}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Summary */}
+          {!editLead && review.summary && (
+            <div>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Summary</p>
+              <p className="text-sm text-slate-700 leading-relaxed bg-slate-50 rounded-xl p-4 border border-slate-200">
+                {review.summary}
+              </p>
+            </div>
+          )}
+
+          {/* Key Points */}
+          {!editLead && keyPoints.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Key Points</p>
+              <ul className="space-y-1.5">
+                {keyPoints.map((kp, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-slate-700">
+                    <span className="text-blue-500 shrink-0 mt-0.5">•</span>
+                    <span>{kp}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Transcript */}
+          {!editLead && messages.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Full Transcript</p>
+              <div className="space-y-2">
+                {messages.map((m, i) => (
+                  <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[85%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
+                      m.role === 'user'
+                        ? 'bg-blue-600 text-white rounded-br-md'
+                        : 'bg-slate-100 text-slate-800 rounded-bl-md border border-slate-200'
+                    }`}>
+                      {m.content}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-            <p className="text-xs text-slate-600 leading-relaxed line-clamp-2">{r.summary}</p>
-          </div>
+          )}
         </div>
-      ))}
+      </div>
     </div>
+  )
+}
+
+// ── Reviews Panel (full reviews tab) ──────────────────────────────────────────
+const SENTIMENT_FILTERS = ['all', 'complaint', 'negative', 'positive', 'suggestion'] as const
+const STATUS_FILTERS    = ['all', 'pending', 'contacted', 'resolved'] as const
+
+function ReviewsPanel({ reviews: initial }: { reviews: DashboardData['recentReviews'] }) {
+  const [reviews, setReviews]         = useState(initial)
+  const [sentFilter, setSentFilter]   = useState<string>('all')
+  const [statFilter, setStatFilter]   = useState<string>('all')
+  const [selected, setSelected]       = useState<ReviewRow | null>(null)
+
+  const handleStatusChange = useCallback((id: string, status: string) => {
+    setReviews((prev) => prev.map((r) => r.id === id ? { ...r, status } : r))
+    setSelected((prev) => prev?.id === id ? { ...prev, status } : prev)
+  }, [])
+
+  const handleLeadChange = useCallback((id: string, lead: { name: string | null; phone: string | null; email: string | null }) => {
+    setReviews((prev) => prev.map((r) => r.id === id
+      ? { ...r, leadName: lead.name, leadPhone: lead.phone, leadEmail: lead.email }
+      : r))
+    setSelected((prev) => prev?.id === id
+      ? { ...prev, leadName: lead.name, leadPhone: lead.phone, leadEmail: lead.email }
+      : prev)
+  }, [])
+
+  const filtered = reviews.filter((r) => {
+    const sentOk = sentFilter === 'all' || r.sentiment === sentFilter
+    const statOk = statFilter === 'all' || r.status === statFilter
+    return sentOk && statOk
+  })
+
+  const pendingCount = reviews.filter((r) => r.sentiment !== 'positive' && r.status === 'pending').length
+
+  return (
+    <>
+      {selected && (
+        <TranscriptModal
+          review={selected}
+          onClose={() => setSelected(null)}
+          onStatusChange={handleStatusChange}
+          onLeadChange={handleLeadChange}
+        />
+      )}
+
+      <div className="mb-5 flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Sentiment filter */}
+          {SENTIMENT_FILTERS.map((f) => (
+            <button key={f} onClick={() => setSentFilter(f)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-colors border ${
+                sentFilter === f
+                  ? 'bg-slate-900 text-white border-slate-900'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
+              }`}>
+              {f === 'all' ? 'All Sentiment' : `${SENTIMENT_EMOJI[f] ?? ''} ${f}`}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Status filter */}
+          {STATUS_FILTERS.map((f) => (
+            <button key={f} onClick={() => setStatFilter(f)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-colors border ${
+                statFilter === f
+                  ? 'bg-slate-900 text-white border-slate-900'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
+              }`}>
+              {f === 'all' ? 'All Status' : f}
+            </button>
+          ))}
+          {pendingCount > 0 && (
+            <span className="px-2 py-1 bg-orange-100 text-orange-700 text-xs font-bold rounded-full border border-orange-200">
+              {pendingCount} need follow-up
+            </span>
+          )}
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <p className="text-slate-400 text-sm text-center py-12">No reviews match the selected filters.</p>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((r) => (
+            <button key={r.id} onClick={() => setSelected(r)}
+              className={`w-full text-left flex gap-3 p-3.5 ${insetCls} rounded-xl hover:bg-blue-50 hover:border-blue-200 transition-colors group`}>
+              <span className="text-xl mt-0.5 shrink-0">
+                {SENTIMENT_EMOJI[r.sentiment ?? ''] ?? '💬'}
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <span className="text-xs font-semibold text-slate-800 break-words">🏪 {r.shopName}</span>
+                    {r.category && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-white text-slate-600 border border-slate-200 capitalize">
+                        {CATEGORY_EMOJI[r.category]} {r.category}
+                      </span>
+                    )}
+                    <StatusBadge status={r.status} />
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {r.rating && <span className="text-xs text-yellow-500 font-semibold">{RATING_EMOJI[r.rating]} {r.rating}★</span>}
+                    <span className="text-xs text-slate-500">
+                      {new Date(r.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                    </span>
+                    <span className="text-xs text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">View →</span>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-600 leading-relaxed line-clamp-2">{r.summary}</p>
+                {(r.leadName || r.leadPhone) && (
+                  <p className="text-xs text-slate-400 mt-1">
+                    {r.leadName && `👤 ${r.leadName}`}{r.leadPhone && ` · 📞 ${r.leadPhone}`}
+                  </p>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </>
   )
 }
 
@@ -404,7 +827,7 @@ function EmptyState() {
 // ── Main Dashboard ─────────────────────────────────────────────────────────────
 export function DashboardClient({ data }: { data: DashboardData | null }) {
   const router = useRouter()
-  const [tab, setTab] = useState<'analytics' | 'shops'>('analytics')
+  const [tab, setTab] = useState<'analytics' | 'reviews' | 'shops'>('analytics')
 
   if (!data) return <EmptyState />
 
@@ -453,6 +876,21 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
               }`}
             >
               📊 Analytics
+            </button>
+            <button
+              onClick={() => setTab('reviews')}
+              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors border ${
+                tab === 'reviews'
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                  : `${secondaryBtnCls}`
+              }`}
+            >
+              📋 Reviews
+              {data.recentReviews.filter((r) => r.sentiment !== 'positive' && r.status === 'pending').length > 0 && (
+                <span className="ml-2 bg-orange-500 text-white text-xs rounded-full px-1.5 py-0.5 font-bold">
+                  {data.recentReviews.filter((r) => r.sentiment !== 'positive' && r.status === 'pending').length}
+                </span>
+              )}
             </button>
             <button
               onClick={() => setTab('shops')}
@@ -658,16 +1096,29 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
             </Card>
           </div>
 
-          {/* ── Recent Reviews (full width) ─────────────────────────────── */}
+          {/* ── Recent Reviews (preview, click to see all) ──────────────── */}
           <Card className="mb-8">
-            <SectionTitle>🕐 Recent Reviews</SectionTitle>
-            <ReviewFeed reviews={recentReviews} />
+            <div className="flex items-center justify-between mb-4">
+              <SectionTitle>🕐 Recent Reviews</SectionTitle>
+              <button onClick={() => setTab('reviews')}
+                className="text-xs text-blue-600 hover:underline font-semibold">
+                View all →
+              </button>
+            </div>
+            <ReviewsPanel reviews={recentReviews.slice(0, 6)} />
           </Card>
 
           <p className="text-center text-slate-700 text-xs mt-8">
             📊 VoiceAgent · Customer Review Analytics · © {new Date().getFullYear()}
           </p>
         </>
+      )}
+
+      {tab === 'reviews' && (
+        <Card>
+          <SectionTitle>📋 All Reviews — Follow-up Tracker</SectionTitle>
+          <ReviewsPanel reviews={recentReviews} />
+        </Card>
       )}
 
       {tab === 'shops' && <ShopsPanel />}

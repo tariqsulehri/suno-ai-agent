@@ -47,6 +47,9 @@ model Review {
   keyPoints String?  // JSON: string[]
   transcript String? // JSON: ChatHistory
 
+  // Follow-up lifecycle
+  status    String   @default("pending")  // pending | contacted | resolved
+
   createdAt DateTime @default(now())
 
   lead Lead?

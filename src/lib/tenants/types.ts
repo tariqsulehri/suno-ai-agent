@@ -24,9 +24,10 @@ export interface TenantConfig {
   token?: string           // paired with x-embed-tenant header
   apiKeys?: string[]       // standalone x-api-key auth
   allowedDomains?: string[] // domain-based implicit auth (no token needed)
-  openaiApiKey?: string    // tenant-supplied OpenAI key; falls back to server env key
+  openaiApiKey?:  string    // tenant-supplied OpenAI key; falls back to server env key
 
   // ── Persona ──────────────────────────────────────────────────────────────────
+  agentType?: 'support' | 'complaints' | 'reviews'  // defaults to 'support'
   agentName: string
   companyName: string
   languageMode: 'auto' | string        // "auto" or a specific language e.g. "english"
@@ -52,4 +53,5 @@ export interface TenantConfig {
 
   // ── Notifications ────────────────────────────────────────────────────────────
   emailNotifications?: EmailNotificationConfig
+
 }

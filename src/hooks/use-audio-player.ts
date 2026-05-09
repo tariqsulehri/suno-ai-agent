@@ -37,17 +37,21 @@ export function useAudioPlayer({
   const playingRef    = useRef(false)
   const currentAudio  = useRef<HTMLAudioElement | null>(null)
   const abortRef      = useRef(false)
+  const fetchCtrlRef  = useRef(new AbortController())
   const requestHeadersRef = useRef<Record<string, string>>(requestHeaders ?? {})
   requestHeadersRef.current = requestHeaders ?? {}
 
   const fetchBlob = useCallback(async (text: string): Promise<Blob | null> => {
+    const ctrl = new AbortController()
+    fetchCtrlRef.current = ctrl
     try {
       const res = await fetch('/api/speak', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', ...requestHeadersRef.current },
         body:    JSON.stringify({ text }),
+        signal:  ctrl.signal,
       })
-      if (!res.ok) return null
+      if (!res.ok || ctrl.signal.aborted) return null
       return await res.blob()
     } catch {
       return null
@@ -80,7 +84,6 @@ export function useAudioPlayer({
       }
 
       const url = URL.createObjectURL(blob)
-
       await new Promise<void>((resolve) => {
         const audio = new Audio(url)
         currentAudio.current = audio
@@ -115,6 +118,7 @@ export function useAudioPlayer({
   )
 
   const stopAll = useCallback(() => {
+    fetchCtrlRef.current.abort()
     abortRef.current = true
     queueRef.current = []
 

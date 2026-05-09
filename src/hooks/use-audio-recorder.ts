@@ -3,42 +3,41 @@
 import { useRef, useState, useCallback } from 'react'
 
 interface UseAudioRecorderOptions {
+  /** When false the hook is a no-op — start/stop do nothing. Default true. */
+  enabled?: boolean
   /** RMS level below which silence is declared (0–128 scale). Default 3. */
   silenceThreshold?: number
   /**
    * Milliseconds of silence that triggers auto-stop AFTER speech has been
-   * detected. Default 1000ms.
+   * detected. Default 1000ms. Ignored when continuous=true.
    */
   silenceAfterSpeech?: number
   /**
    * Milliseconds to wait for the user to START speaking before auto-stopping.
-   * Prevents cutting off someone who clicked mic but needs a moment to think.
-   * Default 3000ms.
+   * Ignored when continuous=true.
    */
   preSpeechTimeout?: number
+  /**
+   * When true: records indefinitely until stop() is called externally.
+   * VAD auto-stop is disabled. Speech activity is still tracked for UI feedback.
+   */
+  continuous?: boolean
   onAudioReady: (blob: Blob) => void
 }
 
 interface UseAudioRecorderReturn {
   isRecording: boolean
-  hasSpeech:   boolean   // true once voice activity detected — useful for UI hints
+  hasSpeech:   boolean
   start: () => Promise<void>
   stop:  () => void
 }
 
-/**
- * Two-tier VAD:
- *  Phase 1 (pre-speech): waits up to `preSpeechTimeout` ms for voice to start.
- *  Phase 2 (post-speech): cuts after `silenceAfterSpeech` ms of continuous silence.
- *
- * This prevents both:
- *  - Cutting off before the user starts talking
- *  - Staying open forever if they pause mid-thought
- */
 export function useAudioRecorder({
-  silenceThreshold  = 3,
+  enabled            = true,
+  silenceThreshold   = 3,
   silenceAfterSpeech = 1000,
-  preSpeechTimeout  = 3000,
+  preSpeechTimeout   = 3000,
+  continuous         = false,
   onAudioReady,
 }: UseAudioRecorderOptions): UseAudioRecorderReturn {
   const [isRecording, setIsRecording] = useState(false)
@@ -65,6 +64,7 @@ export function useAudioRecorder({
   }, [])
 
   const start = useCallback(async () => {
+    if (!enabled) return     // no-op when disabled (e.g. when using Web Speech API)
     let stream: MediaStream
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -94,7 +94,7 @@ export function useAudioRecorder({
     setIsRecording(true)
     setHasSpeech(false)
 
-    // ── Two-tier VAD ───────────────────────────────────────────────────────────
+    // ── Speech activity detection (AudioContext + analyser) ────────────────────
     const audioCtx = new AudioContext()
     audioCtxRef.current = audioCtx
 
@@ -104,38 +104,47 @@ export function useAudioRecorder({
     const src = audioCtx.createMediaStreamSource(stream)
     src.connect(analyser)
 
-    const data     = new Uint8Array(analyser.fftSize)
-    let speechDetected = false  // has the user started speaking?
-    let silentMs       = 0      // consecutive ms of silence after speech
-    let waitedMs       = 0      // ms waited for speech to begin
+    const data = new Uint8Array(analyser.fftSize)
 
-    vadTimerRef.current = setInterval(() => {
-      analyser.getByteTimeDomainData(data)
-      const rms = Math.sqrt(
-        data.reduce((sum, v) => sum + (v - 128) ** 2, 0) / data.length
-      )
+    if (continuous) {
+      // ── Continuous mode: only track speech activity for UI, never auto-stop ──
+      vadTimerRef.current = setInterval(() => {
+        analyser.getByteTimeDomainData(data)
+        const rms = Math.sqrt(
+          data.reduce((sum, v) => sum + (v - 128) ** 2, 0) / data.length
+        )
+        if (rms >= silenceThreshold) setHasSpeech(true)
+      }, 100)
+    } else {
+      // ── Two-tier VAD: auto-stop on silence ────────────────────────────────────
+      let speechDetected = false
+      let silentMs       = 0
+      let waitedMs       = 0
 
-      if (rms >= silenceThreshold) {
-        // Voice detected
-        if (!speechDetected) {
-          speechDetected = true
-          setHasSpeech(true)
-        }
-        silentMs = 0
-      } else {
-        // Silence
-        if (!speechDetected) {
-          // Phase 1: still waiting for user to start
-          waitedMs += 100
-          if (waitedMs >= preSpeechTimeout) stop()
+      vadTimerRef.current = setInterval(() => {
+        analyser.getByteTimeDomainData(data)
+        const rms = Math.sqrt(
+          data.reduce((sum, v) => sum + (v - 128) ** 2, 0) / data.length
+        )
+
+        if (rms >= silenceThreshold) {
+          if (!speechDetected) {
+            speechDetected = true
+            setHasSpeech(true)
+          }
+          silentMs = 0
         } else {
-          // Phase 2: user was speaking, now silent
-          silentMs += 100
-          if (silentMs >= silenceAfterSpeech) stop()
+          if (!speechDetected) {
+            waitedMs += 100
+            if (waitedMs >= preSpeechTimeout) stop()
+          } else {
+            silentMs += 100
+            if (silentMs >= silenceAfterSpeech) stop()
+          }
         }
-      }
-    }, 100)
-  }, [silenceThreshold, silenceAfterSpeech, preSpeechTimeout, onAudioReady, stop])
+      }, 100)
+    }
+  }, [enabled, silenceThreshold, silenceAfterSpeech, preSpeechTimeout, continuous, onAudioReady, stop])
 
   return { isRecording, hasSpeech, start, stop }
 }

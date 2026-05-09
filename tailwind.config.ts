@@ -17,11 +17,11 @@ const config: Config = {
       colors: {
         // Page / shell
         surface: {
-          DEFAULT: '#F0F2F5',
+          DEFAULT: '#F8FAFC',
           card:    '#FFFFFF',
-          raised:  '#F3F2F1',
-          border:  '#EDEBE9',
-          hover:   '#F5F5F5',
+          raised:  '#F1F5F9',
+          border:  '#E2E8F0',
+          hover:   '#F8FAFC',
         },
         ms: {
           // Primary — driven by CSS vars so parent-page theme is inherited
@@ -30,18 +30,18 @@ const config: Config = {
           'blue-lt': 'rgb(var(--va-primary-lt) / <alpha-value>)',
           'blue-md': 'rgb(var(--va-primary-md) / <alpha-value>)',
           // Secondary — teal
-          teal:      '#4CBAAB',
-          'teal-dk': '#3DA898',
-          'teal-lt': '#EBF8F6',
-          'teal-md': '#C8EDE9',
+          teal:      '#0D9488',
+          'teal-dk': '#0F766E',
+          'teal-lt': '#F0FDFA',
+          'teal-md': '#CCFBF1',
           // Neutrals
-          text:      '#323130',
-          sub:       '#605E5C',
-          muted:     '#8A8886',
-          border:    '#EDEBE9',
-          red:       '#C4314B',
-          green:     '#107C10',
-          amber:     '#F7630C',
+          text:      '#0F172A',
+          sub:       '#475569',
+          muted:     '#64748B',
+          border:    '#E2E8F0',
+          red:       '#DC2626',
+          green:     '#16A34A',
+          amber:     '#D97706',
         },
       },
       boxShadow: {

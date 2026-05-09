@@ -1,8 +1,20 @@
 import type { NextConfig } from 'next'
 
+// Known production + local-dev origins that are allowed to embed the /voice page.
+// Override at deploy time with ALLOWED_FRAME_ANCESTORS (comma-separated list).
+const DEFAULT_FRAME_ANCESTORS = [
+  "'self'",
+  'https://ai-script-web-site.vercel.app',
+  'https://www.aiscripto.com',
+  'https://aiscripto.com',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1:5500',
+].join(' ')
+
 function buildFrameAncestors(): string {
   const raw = process.env.ALLOWED_FRAME_ANCESTORS?.trim()
-  if (!raw) return "'self'"
+  if (!raw) return DEFAULT_FRAME_ANCESTORS
   return raw
     .split(',')
     .map((origin) => origin.trim())
@@ -13,6 +25,13 @@ function buildFrameAncestors(): string {
 const frameAncestors = buildFrameAncestors()
 
 const nextConfig: NextConfig = {
+  // Native Node addons must not be bundled by webpack
+  serverExternalPackages: [
+    'better-sqlite3',
+    'sqlite-vec',
+    '@prisma/adapter-better-sqlite3',
+  ],
+
   async headers() {
     return [
       {
@@ -32,8 +51,7 @@ const nextConfig: NextConfig = {
         // Allow embedding the voice page in approved parent sites.
         source: '/voice',
         headers: [
-          // { key: 'Content-Security-Policy', value: `frame-ancestors ${frameAncestors};` },
-          { key: "Content-Security-Policy", value: "frame-ancestors 'self' https://ai-script-web-site.vercel.app https://www.aiscripto.com https://aiscripto.com http://localhost:3000 http://localhost:5173 http://127.0.0.1:5500" },
+          { key: 'Content-Security-Policy', value: `frame-ancestors ${frameAncestors};` },
           { key: 'Permissions-Policy', value: 'microphone=(self)' },
         ],
       },

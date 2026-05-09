@@ -8,28 +8,28 @@ import { SettingsBar }                  from './settings-bar'
 import { TextInput, type TextInputHandle } from './text-input'
 import { LeadPanel }                    from './lead-panel'
 import { StatusIndicator }              from './status-indicator'
+import { AnimatedAvatar }               from './avatar'
 
 interface VoiceAgentProps {
-  tenantId?:    string
-  token?:       string
-  openaiApiKey?: string
-  onClose?:     () => void
+  tenantId?: string
+  token?:    string
+  onClose?:  () => void
 }
 
 function getInitials(name: string): string {
   return name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
 }
 
-export function VoiceAgent({ tenantId, token, openaiApiKey, onClose }: VoiceAgentProps) {
+export function VoiceAgent({ tenantId, token, onClose }: VoiceAgentProps) {
   const textRef = useRef<TextInputHandle>(null)
 
   const {
     phase, transcript, partialReply, error,
     isRecording,
-    language, voice, leadData, callSummary,
+    language, voice, outputMode, leadData, callSummary,
     agentName, companyName,
-    setVoice, stopPlayback, pressMic, releaseMic, sendText,
-  } = useVoiceAgent({ tenantId, token, openaiApiKey })
+    setVoice, setOutputMode, stopPlayback, pressMic, releaseMic, sendText,
+  } = useVoiceAgent({ tenantId, token })
 
   const initials = getInitials(agentName || 'CS')
   const isOnline = phase !== 'connecting' && phase !== 'error' && phase !== 'ended'
@@ -47,9 +47,8 @@ export function VoiceAgent({ tenantId, token, openaiApiKey, onClose }: VoiceAgen
 
         {/* ── Header ─────────────────────────────────────────────────────── */}
         <header className="bg-ms-teal px-5 py-4 flex items-center gap-3 shadow-header shrink-0">
-          <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center
-                          text-white font-semibold text-sm shrink-0 ring-2 ring-white/30">
-            {initials}
+          <div className="shrink-0">
+            <AnimatedAvatar phase={phase} size="sm" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-white font-semibold text-sm leading-tight truncate">
@@ -118,11 +117,41 @@ export function VoiceAgent({ tenantId, token, openaiApiKey, onClose }: VoiceAgen
             </p>
           )}
 
-          {/* Row: [TextInput] [Mic] [Send] */}
+          {/* Row: [TextInput] [OutputToggle] [Mic] [Send] */}
           <div className="flex items-end gap-2">
 
             {/* Text input — no send button inside */}
             <TextInput ref={textRef} phase={phase} onSend={sendText} />
+
+            {/* Voice / text output toggle */}
+            <button
+              type="button"
+              onClick={() => setOutputMode(outputMode === 'voice' ? 'text' : 'voice')}
+              aria-label={outputMode === 'voice' ? 'Switch to text output' : 'Switch to voice output'}
+              title={outputMode === 'voice' ? 'Voice output on' : 'Voice output off'}
+              className={`
+                shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-colors
+                ${outputMode === 'voice'
+                  ? 'bg-ms-teal/10 text-ms-teal hover:bg-ms-teal/20'
+                  : 'bg-surface text-ms-muted hover:bg-surface-border'}
+              `}
+            >
+              {outputMode === 'voice' ? (
+                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none"
+                     stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none"
+                     stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                  <line x1="23" y1="9" x2="17" y2="15" />
+                  <line x1="17" y1="9" x2="23" y2="15" />
+                </svg>
+              )}
+            </button>
 
             {/* Mic — push-to-talk: hold → record, release → send */}
             <MicButton

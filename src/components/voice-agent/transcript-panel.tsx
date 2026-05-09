@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react'
 import type { Message } from '@/types'
 import type { Phase } from '@/types'
+import { AnimatedAvatar } from './avatar'
 
 interface Props {
   messages:      Message[]
@@ -25,13 +26,28 @@ export function TranscriptPanel({ messages, partialReply, agentName, agentInitia
     <div className="flex-1 overflow-y-auto scrollbar-thin px-4 py-4
                     flex flex-col gap-1 min-h-0 bg-surface-hover">
 
-      {/* Empty state */}
-      {isEmpty && phase === 'connecting' && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 py-8">
-          <div className="w-12 h-12 rounded-full bg-ms-teal-lt flex items-center justify-center">
-            <TypingDots />
+      {/* ── Welcome / empty state ────────────────────────────────────────── */}
+      {isEmpty && (
+        <div className="flex-1 flex flex-col items-center justify-center gap-5 py-6">
+          <AnimatedAvatar phase={phase} size="lg" />
+
+          <div className="flex flex-col items-center gap-1.5 text-center px-6">
+            {phase === 'connecting' ? (
+              <>
+                <p className="text-sm font-semibold text-ms-text">Just a moment…</p>
+                <p className="text-xs text-ms-muted">Your support agent is getting ready</p>
+              </>
+            ) : (
+              <>
+                <p className="text-base font-semibold text-ms-text">
+                  👋 Hi! I&apos;m here to help
+                </p>
+                <p className="text-xs text-ms-muted leading-relaxed">
+                  Ask me anything — type your question below or<br />hold the mic to speak.
+                </p>
+              </>
+            )}
           </div>
-          <p className="text-sm text-ms-muted">Connecting to your agent…</p>
         </div>
       )}
 

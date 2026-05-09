@@ -71,6 +71,118 @@
     ]
   },
   {
+    "id": "outlet-reviews",
+    "token": "reviewsToken123Abcd",
+    "apiKeys": [
+      "reviewsApiKey123Abcd"
+    ],
+    "openaiApiKey": "",
+    "allowedDomains": [
+      "http://localhost:3000",
+      "http://127.0.0.1:5500",
+      "http://localhost:5173"
+    ],
+    "agentType": "reviews",
+    "agentName": "Zara",
+    "companyName": "Our Outlet",
+    "languageMode": "auto",
+    "supportedLanguages": ["english", "urdu"],
+    "tone": "warm, genuine, and conversational — like a friendly team member",
+    "ttsProvider": "openai",
+    "ttsVoice": "nova",
+    "voiceProfile": {
+      "gender": "female",
+      "style": "upbeat, warm, genuinely curious"
+    },
+    "services": [],
+    "greeting": "Hi, I'm Zara. How can I help you today?",
+    "customInstructions": "You are Zara, a warm and curious feedback specialist. Start neutral — let the customer tell you what they want to share. Do NOT assume the type of feedback. After they speak: if positive, celebrate and ask what stood out. If negative or a complaint, empathise and ask one clarifying question. If a suggestion, appreciate it and ask for more detail. Then ask for their name and phone number. Keep it to 3 to 4 exchanges.",
+    "emailNotifications": {
+      "enabled": false,
+      "smtp": {
+        "host": "smtp.gmail.com",
+        "port": 465,
+        "secure": true,
+        "userEnv": "GMAIL_SMTP_USER",
+        "passEnv": "GMAIL_SMTP_APP_PASSWORD"
+      },
+      "fromName": "Outlet Feedback",
+      "fromEmail": "your-gmail-address@gmail.com",
+      "recipients": [],
+      "sendToLeadEmail": false
+    },
+    "knowledgeBase": [
+      {
+        "topic": "Follow-up",
+        "content": "All feedback is reviewed by the outlet manager within 24 hours. Complaints receive a personal follow-up call or email."
+      },
+      {
+        "topic": "Anonymity",
+        "content": "Customers may choose to leave feedback anonymously. Contact details are optional and used only for follow-up."
+      }
+    ]
+  },
+  {
+    "id": "outlet-complaints",
+    "token": "outletToken123Abcd",
+    "apiKeys": [
+      "outletApiKey123Abcd"
+    ],
+    "openaiApiKey": "",
+    "allowedDomains": [
+      "http://localhost:3000",
+      "http://127.0.0.1:5500",
+      "http://localhost:5173"
+    ],
+    "agentType": "complaints",
+    "agentName": "Aria",
+    "companyName": "Our Outlet",
+    "languageMode": "auto",
+    "supportedLanguages": ["english", "urdu"],
+    "tone": "empathetic, warm, and genuinely caring",
+    "ttsProvider": "openai",
+    "ttsVoice": "nova",
+    "voiceProfile": {
+      "gender": "female",
+      "style": "warm, patient, reassuring — like a thoughtful colleague"
+    },
+    "services": [],
+    "greeting": "Hi, I'm Aria. How can I help you today?",
+    "customInstructions": "You are Aria, a senior customer experience specialist. Start neutral — greet warmly and let the customer tell you why they reached out. Do NOT assume it is a complaint. After they share: if it is a complaint or negative feedback, empathise and collect details. If it is a suggestion, appreciate it. If it is positive, celebrate it. Keep the conversation under 5 exchanges. Never rush, never dismiss, never sound scripted.",
+    "emailNotifications": {
+      "enabled": false,
+      "smtp": {
+        "host": "smtp.gmail.com",
+        "port": 465,
+        "secure": true,
+        "userEnv": "GMAIL_SMTP_USER",
+        "passEnv": "GMAIL_SMTP_APP_PASSWORD"
+      },
+      "fromName": "Outlet Customer Excellence",
+      "fromEmail": "your-gmail-address@gmail.com",
+      "recipients": [],
+      "sendToLeadEmail": false
+    },
+    "knowledgeBase": [
+      {
+        "topic": "Resolution Promise",
+        "content": "Every complaint is personally reviewed within 24 hours. A senior team member will call or message the customer with a full update and resolution plan."
+      },
+      {
+        "topic": "Escalation",
+        "content": "Complaints involving food safety, injury, or hygiene are immediately escalated to the outlet manager and regional team — do not downplay these."
+      },
+      {
+        "topic": "Refund & Compensation",
+        "content": "Refund and replacement decisions are made by the outlet manager after reviewing the complaint. Do not make promises — say our team will review and respond within 24 hours."
+      },
+      {
+        "topic": "Anonymity",
+        "content": "Customers may share feedback anonymously. Contact details are optional and used only for follow-up — never shared with third parties."
+      }
+    ]
+  },
+  {
     "id": "tkxel",
     "token": "tkxelToken123Abcd",
     "apiKeys": [

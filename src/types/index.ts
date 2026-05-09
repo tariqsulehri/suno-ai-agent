@@ -7,20 +7,41 @@ export interface LeadData {
   purpose: string | null  // reason for calling / what they need
 }
 
+// ── Review capture ─────────────────────────────────────────────────────────────
+export type ReviewSentiment = 'positive' | 'negative' | 'complaint' | 'suggestion' | null
+
+export type ReviewCategory =
+  | 'product'    // food quality, wrong item, defective product
+  | 'service'    // slow service, wrong order, unhelpful staff process
+  | 'behavioral' // staff attitude, rudeness, harassment
+  | 'facility'   // cleanliness, ambiance, hygiene, parking
+  | 'pricing'    // overcharged, hidden fees, wrong bill
+  | 'general'    // overall positive/negative without specific category
+  | null
+
+export interface ReviewData {
+  sentiment:   ReviewSentiment
+  category:    ReviewCategory
+  subcategory: string | null   // finer detail e.g. "cold food", "long wait time"
+  rating:      number | null   // 1–5 inferred from conversation tone
+  items:       string[] | null // specific products/services mentioned
+}
+
 export interface CallSummary {
-  summary:   string     // 2-3 sentence narrative of the discussion
-  keyPoints: string[]   // 3-5 bullet points
+  summary:    string
+  keyPoints:  string[]
+  review?:    ReviewData
   email?: {
-    sent: boolean
+    sent:        boolean
     recipients?: string[]
-    error?: string
+    error?:      string
   }
 }
 
 // ── Conversation ───────────────────────────────────────────────────────────────
 export interface Message {
-  id: string
-  role: 'user' | 'assistant'
+  id:      string
+  role:    'user' | 'assistant'
   content: string
 }
 
@@ -40,9 +61,10 @@ export type Phase =
 export interface VoiceAgentState {
   phase:        Phase
   transcript:   Message[]
-  partialReply: string   // live-streamed tokens, shown before sentence is committed
+  partialReply: string
   error:        string | null
   leadData:     LeadData
+  reviewData:   ReviewData
   callSummary:  CallSummary | null
 }
 
@@ -54,26 +76,27 @@ export type VoiceAgentAction =
   | { type: 'STREAM_TOKEN'; token: string }
   | { type: 'REPLY_COMPLETE'; fullText: string; endCall: boolean }
   | { type: 'LEAD_UPDATE'; lead: LeadData }
+  | { type: 'REVIEW_UPDATE'; review: ReviewData }
   | { type: 'CALL_SUMMARY'; summary: CallSummary }
   | { type: 'SPEAKING_DONE' }
   | { type: 'ERROR'; message: string }
 
 // ── API Payloads ───────────────────────────────────────────────────────────────
 export interface ConfigResponse {
-  language: string
+  language:    string
   ttsProvider: string
-  voice: string
+  voice:       string
 }
 
 export interface TranscribeResponse {
-  text: string
+  text:   string
   error?: string
 }
 
 export interface ChatStreamEvent {
-  token?: string
-  done?: boolean
-  endCall?: boolean
+  token?:    string
+  done?:     boolean
+  endCall?:  boolean
   fullText?: string
 }
 

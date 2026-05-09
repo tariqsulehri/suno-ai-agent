@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { streamChatReply, extractSentences } from '@/lib/ai/chat'
 import { requireEmbedApiAuth, getTenantFromRequest } from '@/lib/security/embed-auth'
+import { db } from '@/lib/db/client'
 import type { ChatMessage } from '@/lib/ai/chat'
 export { OPTIONS } from '@/lib/utils/cors'
 
@@ -14,13 +15,19 @@ export const dynamic = 'force-dynamic'
  *   { sentence: string }                                 — complete sentence ready for TTS
  *   { done: true, fullText: string, endCall: boolean }   — stream finished
  *   { lead: LeadData }                                   — lead capture update
+ *   { review: ReviewData }                               — review classification update
  *   { error: string }                                    — something went wrong
  */
 export async function POST(req: NextRequest) {
   const authError = requireEmbedApiAuth(req)
   if (authError) return authError
 
-  const tenant = getTenantFromRequest(req)
+  const tenant   = getTenantFromRequest(req)
+  const shopCode = req.headers.get('x-embed-shop') ?? ''
+  const shop     = shopCode
+    ? await db.shop.findFirst({ where: { tenantId: tenant.id, branchCode: shopCode } })
+        ?? await db.shop.findFirst({ where: { tenantId: tenant.id } })
+    : await db.shop.findFirst({ where: { tenantId: tenant.id } })
 
   let messages: ChatMessage[]
   try {
@@ -37,26 +44,96 @@ export async function POST(req: NextRequest) {
     return encoder.encode(`data: ${JSON.stringify(payload)}\n\n`)
   }
 
-  const LEAD_RE = /\[LEAD:\{[^}]*(?:\{[^}]*\}[^}]*)?\}\]/g
-  function stripLead(text: string): string {
-    return text.replace(LEAD_RE, '').trim()
+  // Strip hidden tokens + any truncated token debris (e.g. dangling "}]" from cut-off tokens)
+  function findJsonToken(text: string, name: string): { value: string; start: number; end: number } | null {
+    const marker = `[${name}:`
+    const start = text.indexOf(marker)
+    if (start < 0) return null
+
+    const jsonStart = text.indexOf('{', start + marker.length)
+    if (jsonStart < 0) return null
+
+    let depth = 0
+    let inString = false
+    let escaped = false
+
+    for (let i = jsonStart; i < text.length; i++) {
+      const ch = text[i]
+
+      if (escaped) {
+        escaped = false
+        continue
+      }
+      if (ch === '\\') {
+        escaped = inString
+        continue
+      }
+      if (ch === '"') {
+        inString = !inString
+        continue
+      }
+      if (inString) continue
+
+      if (ch === '{') depth++
+      if (ch === '}') {
+        depth--
+        if (depth === 0) {
+          const close = text[i + 1] === ']' ? i + 2 : i + 1
+          return { value: text.slice(jsonStart, i + 1), start, end: close }
+        }
+      }
+    }
+
+    return null
   }
-  function extractLead(text: string): Record<string, string | null> | null {
-    const m = text.match(/\[LEAD:(\{[\s\S]*?\})\]/)
-    if (!m) return null
-    try { return JSON.parse(m[1]) } catch { return null }
+
+  function stripTokens(text: string): string {
+    let cleaned = text
+    for (const name of ['LEAD', 'REVIEW']) {
+      let token = findJsonToken(cleaned, name)
+      while (token) {
+        cleaned = `${cleaned.slice(0, token.start)}${cleaned.slice(token.end)}`
+        token = findJsonToken(cleaned, name)
+      }
+    }
+    return cleaned
+      .replace(/\[END_CALL\]/g, '')
+      .replace(/\s*\}?\]?\s*$/, '')    // remove trailing debris from truncated tokens
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+  }
+  function extractToken<T>(text: string, name: string): T | null {
+    const token = findJsonToken(text, name)
+    if (!token) return null
+    try { return JSON.parse(token.value) as T } catch { return null }
   }
 
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        const completion = await streamChatReply(messages, tenant)
+        const completion = await streamChatReply(messages, tenant, shop ?? undefined)
 
         let accumulated    = ''
         let sentenceBuffer = ''
+        let finalEmitted   = false
+
+        function emitFinal() {
+          if (finalEmitted) return
+          finalEmitted = true
+          const tail = stripTokens(sentenceBuffer.trim())
+          if (tail.length > 0) controller.enqueue(send({ sentence: tail }))
+          const lead    = extractToken<Record<string, string | null>>(accumulated, 'LEAD')
+          const review  = extractToken<Record<string, unknown>>(accumulated, 'REVIEW')
+          const endCall = accumulated.includes('[END_CALL]')
+          const cleaned = stripTokens(accumulated)
+          if (lead)   controller.enqueue(send({ lead }))
+          if (review) controller.enqueue(send({ review }))
+          controller.enqueue(send({ done: true, fullText: cleaned, endCall }))
+          controller.close()
+        }
 
         for await (const chunk of completion) {
-          const token       = chunk.choices[0]?.delta?.content ?? ''
+          const token        = chunk.choices[0]?.delta?.content ?? ''
           const finishReason = chunk.choices[0]?.finish_reason
 
           if (token) {
@@ -67,28 +144,23 @@ export async function POST(req: NextRequest) {
             const { sentences, remainder } = extractSentences(sentenceBuffer)
             sentenceBuffer = remainder
             for (const sentence of sentences) {
-              const clean = stripLead(sentence)
+              const clean = stripTokens(sentence)
               if (clean) controller.enqueue(send({ sentence: clean }))
             }
           }
 
-          if (finishReason === 'stop') {
-            const tail = stripLead(sentenceBuffer.trim())
-            if (tail.length > 0) controller.enqueue(send({ sentence: tail }))
-
-            const lead     = extractLead(accumulated)
-            const cleaned  = stripLead(accumulated)
-            const endCall  = cleaned.trimStart().startsWith('[END_CALL]')
-            const fullText = cleaned.replace('[END_CALL]', '').trim()
-
-            if (lead) controller.enqueue(send({ lead }))
-            controller.enqueue(send({ done: true, fullText, endCall }))
-            controller.close()
-          }
+          // Emit done on any finish reason (stop, length, content_filter, etc.)
+          if (finishReason) emitFinal()
         }
+
+        // Fallback: stream exhausted without a finish_reason chunk
+        emitFinal()
       } catch (err) {
         console.error('[chat]', err)
-        controller.enqueue(send({ error: 'Chat failed' }))
+        const msg = String(err).includes('429')
+          ? 'OpenAI quota exceeded — please add credits at platform.openai.com'
+          : 'Chat failed — please try again'
+        controller.enqueue(send({ error: msg }))
         controller.close()
       }
     },

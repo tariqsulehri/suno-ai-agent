@@ -86,7 +86,7 @@ function getRecentReviews(): {
       JOIN Shop s ON r.shopId = s.id
       LEFT JOIN Lead l ON l.reviewId = r.id
       ORDER BY r.createdAt DESC
-      LIMIT 50
+      LIMIT 200
     `).all() as {
       id: string; shopName: string; sentiment: string | null; category: string | null
       subcategory: string | null; rating: number | null; summary: string | null

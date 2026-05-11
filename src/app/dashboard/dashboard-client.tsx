@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -579,15 +579,106 @@ function TranscriptModal({
   )
 }
 
-// ── Reviews Panel (full reviews tab) ──────────────────────────────────────────
-const SENTIMENT_FILTERS = ['all', 'complaint', 'negative', 'positive', 'suggestion'] as const
-const STATUS_FILTERS    = ['all', 'pending', 'contacted', 'resolved'] as const
+// ── Filter helpers ─────────────────────────────────────────────────────────────
+const DATE_RANGES = [
+  { label: 'Today',    days: 0 },
+  { label: '7 days',  days: 7 },
+  { label: '30 days', days: 30 },
+  { label: '3 months',days: 90 },
+  { label: 'All time',days: -1 },
+] as const
 
+const CATEGORIES  = ['all','product','service','behavioral','facility','pricing','general'] as const
+const SENTIMENTS  = ['all','complaint','negative','positive','suggestion'] as const
+const STATUSES    = ['all','pending','contacted','resolved'] as const
+const SORT_OPTIONS = [
+  { label: 'Newest first',  fn: (a: ReviewRow, b: ReviewRow) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() },
+  { label: 'Oldest first',  fn: (a: ReviewRow, b: ReviewRow) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() },
+  { label: 'Rating ↑',      fn: (a: ReviewRow, b: ReviewRow) => (a.rating ?? 0) - (b.rating ?? 0) },
+  { label: 'Rating ↓',      fn: (a: ReviewRow, b: ReviewRow) => (b.rating ?? 0) - (a.rating ?? 0) },
+] as const
+
+type SortKey = 0 | 1 | 2 | 3
+
+interface ReviewFilters {
+  search:    string
+  dateRange: number   // days back, -1 = all
+  shop:      string   // shop name or 'all'
+  category:  string
+  sentiment: string
+  status:    string
+  rating:    number   // 0 = all
+  sort:      SortKey
+}
+
+const DEFAULT_FILTERS: ReviewFilters = {
+  search: '', dateRange: -1, shop: 'all',
+  category: 'all', sentiment: 'all', status: 'all',
+  rating: 0, sort: 0,
+}
+
+function countActive(f: ReviewFilters): number {
+  return [
+    f.search !== '',
+    f.dateRange !== -1,
+    f.shop !== 'all',
+    f.category !== 'all',
+    f.sentiment !== 'all',
+    f.status !== 'all',
+    f.rating !== 0,
+    f.sort !== 0,
+  ].filter(Boolean).length
+}
+
+function applyFilters(reviews: ReviewRow[], f: ReviewFilters): ReviewRow[] {
+  const q = f.search.toLowerCase().trim()
+  const cutoff = f.dateRange >= 0
+    ? Date.now() - f.dateRange * 86_400_000
+    : 0
+
+  return reviews
+    .filter((r) => {
+      if (f.dateRange >= 0 && new Date(r.createdAt).getTime() < cutoff) return false
+      if (f.shop !== 'all'      && r.shopName  !== f.shop)      return false
+      if (f.category !== 'all'  && r.category  !== f.category)  return false
+      if (f.sentiment !== 'all' && r.sentiment !== f.sentiment)  return false
+      if (f.status !== 'all'    && r.status    !== f.status)     return false
+      if (f.rating !== 0        && r.rating    !== f.rating)     return false
+      if (q) {
+        const hay = [r.summary, r.subcategory, r.shopName, r.leadName, r.leadPhone, r.category]
+          .filter(Boolean).join(' ').toLowerCase()
+        if (!hay.includes(q)) return false
+      }
+      return true
+    })
+    .sort(SORT_OPTIONS[f.sort].fn)
+}
+
+// ── Filter pill ────────────────────────────────────────────────────────────────
+function Pill({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick}
+      className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-colors border whitespace-nowrap ${
+        active
+          ? 'bg-slate-900 text-white border-slate-900'
+          : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
+      }`}>
+      {label}
+    </button>
+  )
+}
+
+// ── Reviews Panel ─────────────────────────────────────────────────────────────
 function ReviewsPanel({ reviews: initial }: { reviews: DashboardData['recentReviews'] }) {
-  const [reviews, setReviews]         = useState(initial)
-  const [sentFilter, setSentFilter]   = useState<string>('all')
-  const [statFilter, setStatFilter]   = useState<string>('all')
-  const [selected, setSelected]       = useState<ReviewRow | null>(null)
+  const [reviews,   setReviews]   = useState(initial)
+  const [filters,   setFilters]   = useState<ReviewFilters>(DEFAULT_FILTERS)
+  const [open,      setOpen]      = useState(false)   // filter panel expanded
+  const [selected,  setSelected]  = useState<ReviewRow | null>(null)
+
+  const set = useCallback(<K extends keyof ReviewFilters>(key: K, val: ReviewFilters[K]) =>
+    setFilters((prev) => ({ ...prev, [key]: val })), [])
+
+  const clearAll = useCallback(() => setFilters(DEFAULT_FILTERS), [])
 
   const handleStatusChange = useCallback((id: string, status: string) => {
     setReviews((prev) => prev.map((r) => r.id === id ? { ...r, status } : r))
@@ -603,13 +694,12 @@ function ReviewsPanel({ reviews: initial }: { reviews: DashboardData['recentRevi
       : prev)
   }, [])
 
-  const filtered = reviews.filter((r) => {
-    const sentOk = sentFilter === 'all' || r.sentiment === sentFilter
-    const statOk = statFilter === 'all' || r.status === statFilter
-    return sentOk && statOk
-  })
-
+  const shops       = useMemo(() => ['all', ...[...new Set(reviews.map((r) => r.shopName))].sort()], [reviews])
+  const filtered    = useMemo(() => applyFilters(reviews, filters), [reviews, filters])
+  const activeCount = countActive(filters)
   const pendingCount = reviews.filter((r) => r.sentiment !== 'positive' && r.status === 'pending').length
+
+  const selCls = `${inputCls} text-xs py-1.5`
 
   return (
     <>
@@ -622,42 +712,159 @@ function ReviewsPanel({ reviews: initial }: { reviews: DashboardData['recentRevi
         />
       )}
 
-      <div className="mb-5 flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Sentiment filter */}
-          {SENTIMENT_FILTERS.map((f) => (
-            <button key={f} onClick={() => setSentFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-colors border ${
-                sentFilter === f
-                  ? 'bg-slate-900 text-white border-slate-900'
-                  : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
-              }`}>
-              {f === 'all' ? 'All Sentiment' : `${SENTIMENT_EMOJI[f] ?? ''} ${f}`}
+      {/* ── Toolbar ─────────────────────────────────────────────────── */}
+      <div className="flex flex-col gap-3 mb-4">
+
+        {/* Search + toggle row */}
+        <div className="flex gap-2 flex-wrap items-center">
+          <div className="relative flex-1 min-w-[180px]">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none">🔍</span>
+            <input
+              type="text" value={filters.search}
+              onChange={(e) => set('search', e.target.value)}
+              placeholder="Search reviews, outlet, customer name, phone…"
+              className={`${inputCls} pl-8 text-sm`}
+            />
+            {filters.search && (
+              <button onClick={() => set('search', '')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs">✕</button>
+            )}
+          </div>
+
+          {/* Filter toggle */}
+          <button onClick={() => setOpen((o) => !o)}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold border transition-colors ${
+              open || activeCount > 0
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-white text-slate-700 border-slate-300 hover:border-blue-400'
+            }`}>
+            <span>⚙ Filters</span>
+            {activeCount > 0 && (
+              <span className="bg-white text-blue-600 text-xs font-black rounded-full w-5 h-5 flex items-center justify-center">
+                {activeCount}
+              </span>
+            )}
+          </button>
+
+          {activeCount > 0 && (
+            <button onClick={clearAll}
+              className="px-3 py-2.5 text-xs font-semibold text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 rounded-lg bg-red-50 transition-colors">
+              ✕ Clear all
             </button>
-          ))}
+          )}
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Status filter */}
-          {STATUS_FILTERS.map((f) => (
-            <button key={f} onClick={() => setStatFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-colors border ${
-                statFilter === f
-                  ? 'bg-slate-900 text-white border-slate-900'
-                  : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
-              }`}>
-              {f === 'all' ? 'All Status' : f}
-            </button>
-          ))}
+
+        {/* Expandable filter panel */}
+        {open && (
+          <div className={`${insetCls} rounded-xl p-4 space-y-4`}>
+
+            {/* Row 1: Date range + Shop + Sort */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">📅 Date Range</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {DATE_RANGES.map((d) => (
+                    <Pill key={d.label} label={d.label}
+                      active={filters.dateRange === d.days}
+                      onClick={() => set('dateRange', d.days)} />
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">🏪 Outlet</p>
+                <select value={filters.shop} onChange={(e) => set('shop', e.target.value)} className={selCls}>
+                  {shops.map((s) => (
+                    <option key={s} value={s}>{s === 'all' ? 'All Outlets' : s}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">↕ Sort By</p>
+                <select value={filters.sort}
+                  onChange={(e) => set('sort', Number(e.target.value) as SortKey)}
+                  className={selCls}>
+                  {SORT_OPTIONS.map((s, i) => (
+                    <option key={i} value={i}>{s.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Row 2: Category */}
+            <div>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">📂 Category</p>
+              <div className="flex flex-wrap gap-1.5">
+                {CATEGORIES.map((c) => (
+                  <Pill key={c} active={filters.category === c}
+                    label={c === 'all' ? 'All' : `${CATEGORY_EMOJI[c] ?? ''} ${c}`}
+                    onClick={() => set('category', c)} />
+                ))}
+              </div>
+            </div>
+
+            {/* Row 3: Sentiment */}
+            <div>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">😊 Sentiment</p>
+              <div className="flex flex-wrap gap-1.5">
+                {SENTIMENTS.map((s) => (
+                  <Pill key={s} active={filters.sentiment === s}
+                    label={s === 'all' ? 'All' : `${SENTIMENT_EMOJI[s] ?? ''} ${s}`}
+                    onClick={() => set('sentiment', s)} />
+                ))}
+              </div>
+            </div>
+
+            {/* Row 4: Status + Rating */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">📌 Follow-up Status</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {STATUSES.map((s) => (
+                    <Pill key={s} active={filters.status === s}
+                      label={s === 'all' ? 'All' : s}
+                      onClick={() => set('status', s)} />
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">⭐ Rating</p>
+                <div className="flex flex-wrap gap-1.5">
+                  <Pill label="All" active={filters.rating === 0} onClick={() => set('rating', 0)} />
+                  {[1,2,3,4,5].map((r) => (
+                    <Pill key={r} active={filters.rating === r}
+                      label={`${RATING_EMOJI[r]} ${r}★`}
+                      onClick={() => set('rating', r)} />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Results summary bar */}
+        <div className="flex items-center justify-between text-xs text-slate-500 flex-wrap gap-2">
+          <span>
+            Showing <span className="font-bold text-slate-800">{filtered.length}</span> of{' '}
+            <span className="font-bold text-slate-800">{reviews.length}</span> reviews
+          </span>
           {pendingCount > 0 && (
-            <span className="px-2 py-1 bg-orange-100 text-orange-700 text-xs font-bold rounded-full border border-orange-200">
+            <span className="px-2.5 py-1 bg-orange-100 text-orange-700 font-bold rounded-full border border-orange-200">
               {pendingCount} need follow-up
             </span>
           )}
         </div>
       </div>
 
+      {/* ── Review list ─────────────────────────────────────────────── */}
       {filtered.length === 0 ? (
-        <p className="text-slate-400 text-sm text-center py-12">No reviews match the selected filters.</p>
+        <div className="text-center py-16">
+          <p className="text-4xl mb-3">🔍</p>
+          <p className="text-slate-500 text-sm font-semibold">No reviews match the selected filters</p>
+          <button onClick={clearAll} className="mt-3 text-xs text-blue-600 hover:underline">Clear filters</button>
+        </div>
       ) : (
         <div className="space-y-2">
           {filtered.map((r) => (
@@ -680,7 +887,7 @@ function ReviewsPanel({ reviews: initial }: { reviews: DashboardData['recentRevi
                   <div className="flex items-center gap-2 shrink-0">
                     {r.rating && <span className="text-xs text-yellow-500 font-semibold">{RATING_EMOJI[r.rating]} {r.rating}★</span>}
                     <span className="text-xs text-slate-500">
-                      {new Date(r.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                      {new Date(r.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })}
                     </span>
                     <span className="text-xs text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">View →</span>
                   </div>

@@ -250,5 +250,76 @@
         "content": "All projects include a 30-day post-launch support period. Extended maintenance plans are available."
       }
     ]
+  },
+  {
+    "id": "ai-pos",
+    "token": "postTestToken123Abcd",
+    "apiKeys": [
+      "postTestApiKey123Abcd"
+    ],
+    "allowedDomains": [
+      "https://www.pos.net.pk/",
+      "https://pos.net.pk/",
+      "http://localhost:3000",
+      "http://127.0.0.1:5500",
+      "https://pos-web-2026.vercel.app",
+      "https://aiscripto.com",
+      "http://localhost:5173"
+    ],
+    "agentName": "Support Agent",
+    "companyName": "Point og Solutions Automations",
+    "languageMode": "auto",
+    "supportedLanguages": ["english", "urdu", "hindi"],
+    "tone": "friendly, expert, and solution-oriented",
+    "ttsProvider": "openai",
+    "ttsVoice": "onyx",
+    "voiceProfile": {
+      "gender": "male",
+      "style": "confident, calm, professional"
+    },
+    "services": [
+      "Custom Software Development",
+      "AI Solutions",
+      "Web and Mobile App Development",
+      "DevOps and Cloud Services"
+    ],
+    "greeting": "Hello! I'm your support agent from POS Automations. How can I help you today?",
+    "customInstructions": "You are a male assistant. Focus on startup clients. Prefer practical, solution-oriented answers. Emphasize speed-to-market and cost-effectiveness.",
+    "emailNotifications": {
+      "enabled": false,
+      "smtp": {
+        "host": "smtp.gmail.com",
+        "port": 465,
+        "secure": true,
+        "userEnv": "GMAIL_SMTP_USER",
+        "passEnv": "GMAIL_SMTP_APP_PASSWORD"
+      },
+      "fromName": "AI-Scripto Voice Agent",
+      "fromEmail": "your-gmail-address@gmail.com",
+      "recipients": [],
+      "sendToLeadEmail": true
+    },
+    "knowledgeBase": [
+      {
+        "topic": "Pricing",
+        "content": "We offer custom quotes based on project scope. No fixed pricing — contact us for a free consultation and estimate."
+      },
+      {
+        "topic": "Timeline",
+        "content": "Most projects are delivered within 4–12 weeks depending on complexity. MVPs can be built in as little as 2–3 weeks."
+      },
+      {
+        "topic": "Tech Stack",
+        "content": "We work with React, Next.js, Node.js, Python, FastAPI, PostgreSQL, MongoDB, AWS, GCP, and Azure. We recommend stacks based on project needs."
+      },
+      {
+        "topic": "AI Solutions",
+        "content": "We build custom AI agents, LLM integrations, RAG pipelines, voice assistants, and AI-powered automation workflows using OpenAI, Anthropic, and open-source models."
+      },
+      {
+        "topic": "Support",
+        "content": "All projects include a 30-day post-launch support period. Extended maintenance plans are available."
+      }
+    ]
   }
 ]

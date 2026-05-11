@@ -1,9 +1,10 @@
 'use client'
 
 import { useRef, useEffect, useState, useCallback } from 'react'
-import { useVoiceAgent } from '@/hooks/use-voice-agent'
-import { AnimatedAvatar } from './avatar'
-import type { Phase } from '@/types'
+import { useVoiceAgent }    from '@/hooks/use-voice-agent'
+import { useTypingSound }   from '@/hooks/use-typing-sound'
+import { AnimatedAvatar }   from './avatar'
+import type { Phase }       from '@/types'
 import type { VoiceThemeName } from './theme-provider'
 
 // ── End-state messages per sentiment ──────────────────────────────────────────
@@ -159,37 +160,55 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
     if (el) el.scrollTop = el.scrollHeight
   }, [transcript, partialReply])
 
-  // Recording countdown — auto-stops at 60 s
+  // Session countdown — starts when conversation goes live, counts down from 60s.
+  // Resets only when phase returns to 'connecting' (new session).
+  // Auto-ends call when timer hits 0.
+  const sessionActiveRef = useRef(false)
   useEffect(() => {
-    if (isRecording) {
+    const live = phase !== 'connecting' && phase !== 'ended'
+    if (live && !sessionActiveRef.current) {
+      sessionActiveRef.current = true
       setRecSecs(0)
       timerRef.current = setInterval(() => {
         setRecSecs(s => {
-          if (s >= MAX - 1) { toggleMic(); return MAX }
+          if (s >= MAX - 1) {
+            clearInterval(timerRef.current!)
+            timerRef.current = null
+            endCall()
+            return MAX
+          }
           return s + 1
         })
       }, 1000)
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current)
-      setRecSecs(0)
+    }
+    if (phase === 'connecting' || phase === 'ended') {
+      sessionActiveRef.current = false
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+      if (phase === 'connecting') setRecSecs(0)
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
-  }, [isRecording, toggleMic])
+  }, [phase, endCall])
 
+  // Typing sound — fires blips as agent reply streams in
+  const { onTextGrow } = useTypingSound(true)
+  useEffect(() => { onTextGrow(partialReply) }, [partialReply, onTextGrow])
+
+  // Interval only decrements — never calls onReset() inside a state updater
+  // (calling a parent setState inside a child updater violates React's rules).
   function startResetCountdown() {
     setResetSecs(5)
     resetTickRef.current = setInterval(() => {
-      setResetSecs(s => {
-        if (s <= 1) {
-          clearInterval(resetTickRef.current!)
-          resetTickRef.current = null
-          onReset()
-          return 0
-        }
-        return s - 1
-      })
+      setResetSecs(s => Math.max(0, s - 1))
     }, 1000)
   }
+
+  // onReset fires in an effect (post-render), not inside the updater
+  useEffect(() => {
+    if (resetSecs === 0 && endStep === 'confirmed') {
+      if (resetTickRef.current) { clearInterval(resetTickRef.current); resetTickRef.current = null }
+      onReset()
+    }
+  }, [resetSecs, endStep, onReset])
 
   // Step 1 — phase transitions to 'ended': show sending screen (or skip for positive).
   useEffect(() => {

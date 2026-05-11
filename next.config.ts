@@ -7,9 +7,16 @@ const DEFAULT_FRAME_ANCESTORS = [
   'https://ai-script-web-site.vercel.app',
   'https://www.aiscripto.com',
   'https://aiscripto.com',
+  // POS — Point of Solutions
+  'https://pos.net.pk',
+  'https://www.pos.net.pk',
+  'https://tariqsulehri.github.io',
+  // Local dev
   'http://localhost:3000',
   'http://localhost:5173',
+  'http://localhost:5500',
   'http://127.0.0.1:5500',
+  'http://127.0.0.1:3000',
 ].join(' ')
 
 function buildFrameAncestors(): string {

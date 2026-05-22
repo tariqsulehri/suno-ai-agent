@@ -32,6 +32,8 @@ function buildFrameAncestors(): string {
 const frameAncestors = buildFrameAncestors()
 
 const nextConfig: NextConfig = {
+  outputFileTracingRoot: process.cwd(),
+
   // Native Node addons must not be bundled by webpack
   serverExternalPackages: [
     'better-sqlite3',

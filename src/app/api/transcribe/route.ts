@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { transcribeAudio } from '@/lib/ai/transcribe'
+import { isInvalidApiKeyError, isMissingProviderError, isQuotaError } from '@/lib/ai/errors'
 import { getLangConfig } from '@/lib/config/language'
 import { requireEmbedApiAuth, getTenantFromRequest } from '@/lib/security/embed-auth'
 import { normalizeSpeechTranscript } from '@/lib/utils/normalize-speech'
@@ -35,10 +36,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ text })
   } catch (err) {
     console.error('[transcribe]', err)
-    const isMissingProvider = String(err).includes('OPENAI_API_KEY')
+    const isInvalidKey = isInvalidApiKeyError(err)
+    const isQuota = isQuotaError(err)
+    const isMissingProvider = isMissingProviderError(err, 'OPENAI_API_KEY')
+
     return NextResponse.json(
-      { error: isMissingProvider ? 'Transcription provider is not configured' : 'Transcription failed' },
-      { status: isMissingProvider ? 503 : 500 }
+      {
+        error: isInvalidKey
+          ? 'OpenAI API key is invalid'
+          : isMissingProvider
+            ? 'Transcription provider is not configured'
+            : isQuota
+              ? 'Transcription quota exceeded'
+              : 'Transcription failed',
+      },
+      { status: isInvalidKey ? 401 : isQuota || isMissingProvider ? 503 : 500 }
     )
   }
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { synthesizeSpeech } from '@/lib/ai/tts'
+import { isInvalidApiKeyError, isMissingProviderError, isQuotaError } from '@/lib/ai/errors'
 import { getVoiceForLanguage } from '@/lib/config/voice'
 import { detectLanguage } from '@/lib/utils/detect-language'
 import { requireEmbedApiAuth, getTenantFromRequest } from '@/lib/security/embed-auth'
@@ -44,11 +45,23 @@ export async function POST(req: NextRequest) {
     })
   } catch (err) {
     console.error('[speak]', err)
-    const isQuota = String(err).includes('429')
-    const isMissingProvider = String(err).includes('OPENAI_API_KEY') || String(err).includes('ELEVENLABS_API_KEY')
+    const isQuota = isQuotaError(err)
+    const isInvalidKey = isInvalidApiKeyError(err)
+    const isMissingProvider =
+      isMissingProviderError(err, 'OPENAI_API_KEY') ||
+      isMissingProviderError(err, 'ELEVENLABS_API_KEY')
+
     return NextResponse.json(
-      { error: isMissingProvider ? 'TTS provider is not configured' : isQuota ? 'TTS quota exceeded' : 'TTS failed' },
-      { status: isQuota || isMissingProvider ? 503 : 500 }
+      {
+        error: isInvalidKey
+          ? 'OpenAI API key is invalid'
+          : isMissingProvider
+            ? 'TTS provider is not configured'
+            : isQuota
+              ? 'TTS quota exceeded'
+              : 'TTS failed',
+      },
+      { status: isInvalidKey ? 401 : isQuota || isMissingProvider ? 503 : 500 }
     )
   }
 }

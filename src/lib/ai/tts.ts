@@ -32,6 +32,9 @@ function normalizeForSpeech(text: string): string {
 
 // ── OpenAI TTS ─────────────────────────────────────────────────────────────────
 async function synthesizeOpenAI(text: string, voice: OpenAIVoice, apiKey?: string): Promise<Buffer> {
+  if (!apiKey && !env.OPENAI_API_KEY) {
+    throw new Error('OPENAI_API_KEY is required for speech synthesis.')
+  }
   const client = getOpenAIClient(apiKey)
   const response = await client.audio.speech.create({
     model: 'tts-1',

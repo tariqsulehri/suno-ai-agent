@@ -1,6 +1,6 @@
 import { db } from './client'
 import Database from 'better-sqlite3'
-import path from 'path'
+import { resolveSqliteDbPath } from './path'
 
 type ReviewRow = {
   sentiment:   string | null
@@ -10,8 +10,7 @@ type ReviewRow = {
 }
 
 function rawDb() {
-  const dbPath = (process.env.DATABASE_URL ?? `file:${path.join(process.cwd(), 'dev.db')}`).replace(/^file:/, '')
-  return new Database(dbPath, { readonly: true })
+  return new Database(resolveSqliteDbPath(), { readonly: true })
 }
 
 function getTrend(): { month: string; count: number }[] {

@@ -33,6 +33,10 @@ const frameAncestors = buildFrameAncestors()
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: process.cwd(),
+  outputFileTracingIncludes: {
+    '/api/:path*': ['./dev.db'],
+    '/dashboard': ['./dev.db'],
+  },
 
   // Native Node addons must not be bundled by webpack
   serverExternalPackages: [

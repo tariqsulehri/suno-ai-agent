@@ -2,16 +2,7 @@ import { PrismaClient } from '../../generated/prisma/client'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 import Database from 'better-sqlite3'
 import * as sqliteVec from 'sqlite-vec'
-import path from 'path'
-
-// ── Resolve DB path ────────────────────────────────────────────────────────────
-function resolveDbUrl(): string {
-  return process.env.DATABASE_URL ?? `file:${path.join(process.cwd(), 'dev.db')}`
-}
-
-function resolveDbPath(): string {
-  return resolveDbUrl().replace(/^file:/, '')
-}
+import { resolveSqliteDbPath, resolveSqliteDbUrl } from './path'
 
 // ── Global singletons (prevents reconnects in Next.js dev hot-reload) ──────────
 const g = globalThis as unknown as {
@@ -23,7 +14,7 @@ const g = globalThis as unknown as {
 // Uses its own internal better-sqlite3 connection via the adapter
 function getPrisma(): PrismaClient {
   if (!g.prisma) {
-    const adapter = new PrismaBetterSqlite3({ url: resolveDbUrl() })
+    const adapter = new PrismaBetterSqlite3({ url: resolveSqliteDbUrl() })
     g.prisma = new PrismaClient({ adapter })
   }
   return g.prisma
@@ -41,7 +32,7 @@ export const db = new Proxy({} as PrismaClient, {
 // Separate connection so we can load the native extension
 function getRawDb(): InstanceType<typeof Database> {
   if (!g.rawDb) {
-    g.rawDb = new Database(resolveDbPath())
+    g.rawDb = new Database(resolveSqliteDbPath())
     sqliteVec.load(g.rawDb)
   }
   return g.rawDb

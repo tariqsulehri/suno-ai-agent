@@ -21,16 +21,36 @@ const g = globalThis as unknown as {
 
 // Prisma client — structured queries (Shop, Review, Lead)
 // Uses its own internal better-sqlite3 connection via the adapter
-if (!g.prisma) {
-  const adapter = new PrismaBetterSqlite3({ url: resolveDbUrl() })
-  g.prisma = new PrismaClient({ adapter })
+function getPrisma(): PrismaClient {
+  if (!g.prisma) {
+    const adapter = new PrismaBetterSqlite3({ url: resolveDbUrl() })
+    g.prisma = new PrismaClient({ adapter })
+  }
+  return g.prisma
 }
-export const db = g.prisma
+
+export const db = new Proxy({} as PrismaClient, {
+  get(_target, prop) {
+    const client = getPrisma()
+    const value = client[prop as keyof PrismaClient]
+    return typeof value === 'function' ? value.bind(client) : value
+  },
+})
 
 // Raw better-sqlite3 — vector operations only (sqlite-vec virtual table)
 // Separate connection so we can load the native extension
-if (!g.rawDb) {
-  g.rawDb = new Database(resolveDbPath())
-  sqliteVec.load(g.rawDb)
+function getRawDb(): InstanceType<typeof Database> {
+  if (!g.rawDb) {
+    g.rawDb = new Database(resolveDbPath())
+    sqliteVec.load(g.rawDb)
+  }
+  return g.rawDb
 }
-export const rawDb = g.rawDb
+
+export const rawDb = new Proxy({} as InstanceType<typeof Database>, {
+  get(_target, prop) {
+    const client = getRawDb()
+    const value = client[prop as keyof InstanceType<typeof Database>]
+    return typeof value === 'function' ? value.bind(client) : value
+  },
+})

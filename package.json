@@ -2,6 +2,9 @@
   "name": "voiceagent",
   "version": "2.0.0",
   "private": true,
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -9,7 +12,7 @@
     "lint": "next lint",
     "cli:voice": "tsx src/cli/voice.ts",
     "cli:text": "tsx src/cli/text.ts",
-    "postinstall": "npm rebuild better-sqlite3"
+    "postinstall": "prisma generate && npm rebuild better-sqlite3"
   },
   "dependencies": {
     "@elevenlabs/elevenlabs-js": "^2.0.0",

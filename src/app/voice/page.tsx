@@ -44,7 +44,7 @@ export default async function VoicePage({ searchParams }: VoicePageProps) {
   const modeParam = typeof params.mode === 'string' ? params.mode : undefined
   const launcherParam = typeof params.launcher === 'string' ? params.launcher : undefined
   const marginParam = typeof params.margin === 'string' ? params.margin : undefined
-  const theme = isThemeName(params.theme) ? params.theme : 'daylight'
+  const theme = isThemeName(params.theme) ? params.theme : 'nexus'
   const mode = modeParam === 'fullscreen' ? 'fullscreen'
              : modeParam === 'floating' || launcherParam === 'true' ? 'floating'
              : modeParam === 'inline' ? 'inline'

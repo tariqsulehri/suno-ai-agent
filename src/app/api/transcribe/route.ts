@@ -35,6 +35,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ text })
   } catch (err) {
     console.error('[transcribe]', err)
-    return NextResponse.json({ error: 'Transcription failed' }, { status: 500 })
+    const isMissingProvider = String(err).includes('OPENAI_API_KEY')
+    return NextResponse.json(
+      { error: isMissingProvider ? 'Transcription provider is not configured' : 'Transcription failed' },
+      { status: isMissingProvider ? 503 : 500 }
+    )
   }
 }

@@ -45,9 +45,10 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error('[speak]', err)
     const isQuota = String(err).includes('429')
+    const isMissingProvider = String(err).includes('OPENAI_API_KEY') || String(err).includes('ELEVENLABS_API_KEY')
     return NextResponse.json(
-      { error: isQuota ? 'TTS quota exceeded' : 'TTS failed' },
-      { status: isQuota ? 503 : 500 }
+      { error: isMissingProvider ? 'TTS provider is not configured' : isQuota ? 'TTS quota exceeded' : 'TTS failed' },
+      { status: isQuota || isMissingProvider ? 503 : 500 }
     )
   }
 }

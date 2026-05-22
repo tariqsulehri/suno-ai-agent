@@ -54,14 +54,19 @@ export function ThemeProvider({ initial, theme }: { initial?: ThemeColors; theme
     // Apply server-derived theme (no-op if server already injected <style>)
     if (initial) applyTheme(initial)
 
+    const isEmbedded = window.parent !== window
     const parentOrigin = resolveParentOrigin()
 
-    // Tell parent we're ready — it can reply with voice-agent:theme
-    window.parent?.postMessage({ type: 'voice-agent:ready' }, parentOrigin)
+    // Tell parent we're ready only when actually embedded. On Vercel preview pages,
+    // document.referrer can be https://vercel.com while window.parent is self,
+    // which makes postMessage throw a target-origin mismatch.
+    if (isEmbedded) {
+      window.parent.postMessage({ type: 'voice-agent:ready' }, parentOrigin)
+    }
 
     function onMessage(e: MessageEvent) {
       // Reject messages from unexpected origins when we know the parent origin.
-      if (parentOrigin !== '*' && e.origin !== parentOrigin) return
+      if (isEmbedded && parentOrigin !== '*' && e.origin !== parentOrigin) return
 
       if (e.data?.type === 'voice-agent:set-theme') {
         applyThemeName(e.data.theme)

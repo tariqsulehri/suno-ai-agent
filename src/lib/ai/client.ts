@@ -2,14 +2,14 @@ import OpenAI from 'openai'
 import { env, requireLLMProvider } from '@/lib/config/env'
 
 // ── Provider detection ────────────────────────────────────────────────────────
-// Groq is free and OpenAI-compatible — preferred when GROQ_API_KEY is set.
-// Falls back to OpenAI when only OPENAI_API_KEY is present.
+// Prefer OpenAI when configured because voice routes already require it.
+// Groq remains a fallback LLM provider when OpenAI is not configured.
 
 export type LLMProvider = 'groq' | 'openai'
 
 export function getProvider(): LLMProvider {
   requireLLMProvider()
-  return env.GROQ_API_KEY ? 'groq' : 'openai'
+  return env.OPENAI_API_KEY ? 'openai' : 'groq'
 }
 
 // Model names per provider
@@ -30,13 +30,13 @@ export function getLLMClient(apiKey?: string): OpenAI {
   if (apiKey) return new OpenAI({ apiKey })
   requireLLMProvider()
   if (!_client) {
-    if (env.GROQ_API_KEY) {
+    if (env.OPENAI_API_KEY) {
+      _client = new OpenAI({ apiKey: env.OPENAI_API_KEY })
+    } else {
       _client = new OpenAI({
         apiKey:  env.GROQ_API_KEY,
         baseURL: 'https://api.groq.com/openai/v1',
       })
-    } else {
-      _client = new OpenAI({ apiKey: env.OPENAI_API_KEY })
     }
   }
   return _client

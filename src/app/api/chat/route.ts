@@ -3,6 +3,7 @@ import { streamChatReply, extractSentences } from '@/lib/ai/chat'
 import { requireEmbedApiAuth, getTenantFromRequest } from '@/lib/security/embed-auth'
 import { db } from '@/lib/db/client'
 import type { ChatMessage } from '@/lib/ai/chat'
+import type { TenantConfig } from '@/lib/tenants/types'
 export { OPTIONS } from '@/lib/utils/cors'
 
 export const dynamic = 'force-dynamic'
@@ -24,10 +25,7 @@ export async function POST(req: NextRequest) {
 
   const tenant   = getTenantFromRequest(req)
   const shopCode = req.headers.get('x-embed-shop') ?? ''
-  const shop     = shopCode
-    ? await db.shop.findFirst({ where: { tenantId: tenant.id, branchCode: shopCode } })
-        ?? await db.shop.findFirst({ where: { tenantId: tenant.id } })
-    : await db.shop.findFirst({ where: { tenantId: tenant.id } })
+  const shop     = await resolveShopForChat(tenant, shopCode)
 
   let messages: ChatMessage[]
   try {
@@ -173,4 +171,16 @@ export async function POST(req: NextRequest) {
       'X-Accel-Buffering': 'no',
     },
   })
+}
+
+async function resolveShopForChat(tenant: TenantConfig, shopCode: string) {
+  try {
+    return shopCode
+      ? await db.shop.findFirst({ where: { tenantId: tenant.id, branchCode: shopCode } })
+          ?? await db.shop.findFirst({ where: { tenantId: tenant.id } })
+      : await db.shop.findFirst({ where: { tenantId: tenant.id } })
+  } catch (err) {
+    console.error('[chat] Shop lookup skipped:', err)
+    return null
+  }
 }

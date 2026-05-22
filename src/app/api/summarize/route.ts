@@ -44,7 +44,8 @@ export async function POST(req: NextRequest) {
       keyPoints: [],
       ...(review ? { review } : {}),
     }
-    await persistReview({ tenant, lead, review, summary: quickSummary, messages, shopCode })
+    persistReview({ tenant, lead, review, summary: quickSummary, messages, shopCode })
+      .catch((err) => console.error('[persist-review]', err))
     return NextResponse.json({ ...quickSummary, email: null })
   }
 
@@ -55,7 +56,8 @@ export async function POST(req: NextRequest) {
       ...(review ? { review } : {}),
     }
     const email = await sendCallSummaryEmail({ tenant, lead, summary: briefSummary, messages })
-    await persistReview({ tenant, lead, review, summary: briefSummary, messages, shopCode })
+    persistReview({ tenant, lead, review, summary: briefSummary, messages, shopCode })
+      .catch((err) => console.error('[persist-review]', err))
     return NextResponse.json({ ...briefSummary, email })
   }
 
@@ -117,10 +119,9 @@ Return only valid JSON: { "summary": "...", "keyPoints": ["...", "..."] }`
   }
 
   // Always persist and email regardless of whether LLM succeeded
-  const [email] = await Promise.all([
-    sendCallSummaryEmail({ tenant, lead, summary, messages }),
-    persistReview({ tenant, lead, review, summary, messages, shopCode }),
-  ])
+  const email = await sendCallSummaryEmail({ tenant, lead, summary, messages })
+  persistReview({ tenant, lead, review, summary, messages, shopCode })
+    .catch((err) => console.error('[persist-review]', err))
 
   return NextResponse.json({ ...summary, email })
 }
@@ -197,7 +198,6 @@ async function persistReview({
 
   } catch (err) {
     console.error('[persist-review]', err)
-    throw err
   }
 }
 

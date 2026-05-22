@@ -6,6 +6,7 @@ import { VoiceAgent } from './index'
 interface VoiceAgentWidgetProps {
   tenantId?:    string
   token?:       string
+  shopCode?:    string
   mode?:        'floating' | 'inline'
   margin?:      'none' | 'sm' | 'md'
 }
@@ -13,6 +14,7 @@ interface VoiceAgentWidgetProps {
 export function VoiceAgentWidget({
   tenantId,
   token,
+  shopCode,
   mode = 'floating',
   margin = mode === 'inline' ? 'sm' : 'md',
 }: VoiceAgentWidgetProps) {
@@ -35,7 +37,7 @@ export function VoiceAgentWidget({
 
     return (
       <div className={`min-h-dvh w-full flex items-end justify-end ${inlinePadding}`}>
-        <VoiceAgent tenantId={tenantId} token={token} onClose={closeInline} />
+        <VoiceAgent tenantId={tenantId} token={token} shopCode={shopCode} onClose={closeInline} />
       </div>
     )
   }
@@ -53,7 +55,7 @@ export function VoiceAgentWidget({
             opacity-100 scale-100 translate-y-0 pointer-events-auto
           `}
         >
-          <VoiceAgent tenantId={tenantId} token={token} onClose={() => setOpen(false)} />
+          <VoiceAgent tenantId={tenantId} token={token} shopCode={shopCode} onClose={() => setOpen(false)} />
         </div>
       )}
 

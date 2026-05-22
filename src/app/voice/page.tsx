@@ -16,6 +16,7 @@ function isHex(v: unknown): v is string {
 }
 
 const THEMES: VoiceThemeName[] = ['nexus', 'daylight', 'emerald', 'ember']
+const VALID_SHOPS = ['shop1', 'shop2', 'shop3', 'shop4']
 
 function isThemeName(value: unknown): value is VoiceThemeName {
   return typeof value === 'string' && THEMES.includes(value as VoiceThemeName)
@@ -31,6 +32,29 @@ function buildThemeStyle(primary: string, dk: string, lt: string, md: string): s
     `--nx-accent:${primary};` +
     `--nx-accent-rgb:${hexToChannels(primary)}` +
     `}`
+  )
+}
+
+function RequiredContextCard({ tenantId, shopCode }: { tenantId?: string; shopCode?: string }) {
+  const hasInvalidShop = Boolean(shopCode && !VALID_SHOPS.includes(shopCode.toLowerCase()))
+
+  return (
+    <main className="min-h-dvh flex items-center justify-center bg-surface p-6">
+      <div className="nx-shop-card max-w-md text-center">
+        <div className="nx-shop-icon">AI</div>
+        <h1 className="nx-shop-title">Agent Link Required</h1>
+        <p className="nx-shop-body">
+          {hasInvalidShop
+            ? 'This agent has not been configured for the selected shop.'
+            : 'Please open the agent with a tenant and shop code so reviews are saved to the correct branch.'}
+        </p>
+        <p className="mt-4 text-xs text-slate-400 break-all">
+          /voice?tenant=outlet-reviews&shop=shop1
+        </p>
+        {!tenantId && <p className="mt-3 text-xs text-slate-500">Missing: tenant</p>}
+        {!shopCode && <p className="mt-1 text-xs text-slate-500">Missing: shop</p>}
+      </div>
+    </main>
   )
 }
 
@@ -71,6 +95,11 @@ export default async function VoicePage({ searchParams }: VoicePageProps) {
   // ─────────────────────────────────────────────────────────────────────────
 
   const auth = validateEmbedQuery(tenantId, token)
+  const validShop = Boolean(shopCode && VALID_SHOPS.includes(shopCode.toLowerCase()))
+
+  if (!tenantId || !validShop) {
+    return <RequiredContextCard tenantId={tenantId} shopCode={shopCode} />
+  }
 
   if (isEmbedAuthEnabled() && !auth.ok) {
     return (
@@ -104,6 +133,7 @@ export default async function VoicePage({ searchParams }: VoicePageProps) {
           <NexusAgent tenantId={tenantId} token={token} shopCode={shopCode} />
         ) : (
           <VoiceAgentWidget tenantId={tenantId} token={token}
+                            shopCode={shopCode}
                             mode={mode as 'floating' | 'inline'} margin={margin} />
         )}
       </main>

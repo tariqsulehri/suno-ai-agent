@@ -13,6 +13,7 @@ import { AnimatedAvatar }               from './avatar'
 interface VoiceAgentProps {
   tenantId?: string
   token?:    string
+  shopCode?: string
   onClose?:  () => void
 }
 
@@ -20,7 +21,7 @@ function getInitials(name: string): string {
   return name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
 }
 
-export function VoiceAgent({ tenantId, token, onClose }: VoiceAgentProps) {
+export function VoiceAgent({ tenantId, token, shopCode, onClose }: VoiceAgentProps) {
   const textRef = useRef<TextInputHandle>(null)
 
   const {
@@ -29,7 +30,7 @@ export function VoiceAgent({ tenantId, token, onClose }: VoiceAgentProps) {
     language, voice, outputMode, leadData, callSummary,
     agentName, companyName,
     setVoice, setOutputMode, stopPlayback, pressMic, releaseMic, sendText,
-  } = useVoiceAgent({ tenantId, token })
+  } = useVoiceAgent({ tenantId, token, shopCode })
 
   const initials = getInitials(agentName || 'CS')
   const isOnline = phase !== 'connecting' && phase !== 'error' && phase !== 'ended'

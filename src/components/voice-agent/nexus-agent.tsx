@@ -93,7 +93,7 @@ export function NexusAgent(props: Props) {
 const VALID_SHOPS = ['shop1', 'shop2', 'shop3', 'shop4']
 
 function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onReset: () => void }) {
-  const validShop = !shopCode || VALID_SHOPS.includes(shopCode.toLowerCase())
+  const validShop = Boolean(shopCode && VALID_SHOPS.includes(shopCode.toLowerCase()))
 
   const {
     phase, transcript, partialReply, error,

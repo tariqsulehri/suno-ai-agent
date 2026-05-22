@@ -15,10 +15,11 @@ export async function GET(req: NextRequest) {
 
   const tenant = script.getAttribute("data-tenant");
   const token = script.getAttribute("data-token");
+  const shop = script.getAttribute("data-shop");
   const theme = script.getAttribute("data-theme");
 
-  if (!tenant || !token) {
-    console.error("AI Agent: Missing tenant or token");
+  if (!tenant || !token || !shop) {
+    console.error("AI Agent: Missing tenant, token, or shop");
     return;
   }
 
@@ -95,6 +96,7 @@ export async function GET(req: NextRequest) {
 
         url.searchParams.set("tenant", tenant);
         url.searchParams.set("token", token);
+        url.searchParams.set("shop", shop);
 
         const primaryColor = detectPrimaryColor();
         if (primaryColor) url.searchParams.set("primaryColor", primaryColor);

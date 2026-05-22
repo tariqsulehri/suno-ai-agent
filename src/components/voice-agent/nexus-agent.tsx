@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useEffect, useState, useCallback } from 'react'
+import { useRef, useEffect, useState, useCallback, type CSSProperties } from 'react'
 import { useVoiceAgent }    from '@/hooks/use-voice-agent'
 import { useTypingSound }   from '@/hooks/use-typing-sound'
 import { AnimatedAvatar }   from './avatar'
@@ -26,43 +26,39 @@ const DEFAULT_COLOR = '#00E5FF'
 const mc = (s: string | null) => (s ? MOOD_COLOR[s] ?? DEFAULT_COLOR : DEFAULT_COLOR)
 
 const MOOD_LABEL: Record<string, string> = {
-  positive:   '😊 Positive Experience',
-  negative:   '😐 Negative Feedback',
-  complaint:  '🚨 Formal Complaint',
-  suggestion: '💡 Suggestion',
+  positive:   'Positive Experience',
+  negative:   'Negative Feedback',
+  complaint:  'Formal Complaint',
+  suggestion: 'Customer Suggestion',
 }
 
 // ── Theme system ───────────────────────────────────────────────────────────────
 const THEMES: VoiceThemeName[] = ['nexus', 'daylight', 'emerald', 'ember']
 
-const THEME_ACCENTS: Record<VoiceThemeName, string> = {
-  nexus:    '#00E5FF',
-  daylight: '#2563EB',
-  emerald:  '#10B981',
-  ember:    '#F97316',
-}
-
-const THEME_LABELS: Record<VoiceThemeName, string> = {
-  nexus:    'Nexus',
-  daylight: 'Daylight',
-  emerald:  'Emerald',
-  ember:    'Ember',
-}
-
 // ── Status copy ────────────────────────────────────────────────────────────────
 const STATUS: Record<Phase, string> = {
-  connecting:   'Connecting to agent…',
-  idle:         'Ready — press the button to speak',
-  listening:    'Listening… speak now',
-  transcribing: 'Analysing your voice…',
-  thinking:     'Processing your feedback…',
-  speaking:     'Agent is responding…',
-  ended:        'Session complete',
-  error:        'Connection error — please retry',
+  connecting:   'Initializing secure voice channel',
+  idle:         'Ready for customer input',
+  listening:    'Listening with pause tolerance',
+  transcribing: 'Converting voice to structured insight',
+  thinking:     'Classifying intent and sentiment',
+  speaking:     'Agent response in progress',
+  ended:        'Conversation submitted',
+  error:        'Connection needs attention',
 }
 
 // ── Public interface ───────────────────────────────────────────────────────────
 interface Props { tenantId?: string; token?: string; shopCode?: string }
+
+const SESSION_LIMIT_SECS = 120
+const RECORDING_LIMIT_SECS = 60
+
+function formatClock(totalSecs: number): string {
+  const safe = Math.max(0, totalSecs)
+  const mm = Math.floor(safe / 60)
+  const ss = (safe % 60).toString().padStart(2, '0')
+  return `${mm}:${ss}`
+}
 
 // Session wrapper — remounts NexusAgentInner on reset to avoid a full page reload.
 export function NexusAgent(props: Props) {
@@ -97,7 +93,7 @@ export function NexusAgent(props: Props) {
 const VALID_SHOPS = ['shop1', 'shop2', 'shop3', 'shop4']
 
 function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onReset: () => void }) {
-  const validShop = !!(shopCode && VALID_SHOPS.includes(shopCode.toLowerCase()))
+  const validShop = !shopCode || VALID_SHOPS.includes(shopCode.toLowerCase())
 
   const {
     phase, transcript, partialReply, error,
@@ -106,25 +102,35 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
     language, setLanguage,
     reviewData, leadData, callSummary,
     toggleMic, endCall,
-  } = useVoiceAgent({ tenantId, token, shopCode, defaultOutputMode: 'voice', webSpeech: false, browserTts: false })
+  } = useVoiceAgent({
+    tenantId,
+    token,
+    shopCode,
+    defaultOutputMode: 'voice',
+    continuousRecording: true,
+    webSpeech: false,
+    browserTts: false,
+  })
 
   const transcriptRef = useRef<HTMLDivElement>(null)
   const timerRef      = useRef<ReturnType<typeof setInterval> | null>(null)
   const endTimerRef   = useRef<ReturnType<typeof setTimeout>  | null>(null)
   const resetTickRef  = useRef<ReturnType<typeof setInterval> | null>(null)
-  const MAX = 60
+  const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const endCallRef    = useRef(endCall)
+  const toggleMicRef   = useRef(toggleMic)
 
-  const [recSecs,     setRecSecs]    = useState(0)
+  const [sessionSecs, setSessionSecs] = useState(0)
+  const [recordSecs,  setRecordSecs]  = useState(0)
   const [endStep,     setEndStep]    = useState<'sending' | 'confirmed' | null>(null)
   const [resetSecs,   setResetSecs]  = useState(5)
   const [themeColor,  setThemeColor] = useState(DEFAULT_COLOR)
-  const [activeTheme, setActiveTheme] = useState<VoiceThemeName>(() => {
-    if (typeof document !== 'undefined') {
-      const t = document.documentElement.dataset.vaTheme
-      if (t && THEMES.includes(t as VoiceThemeName)) return t as VoiceThemeName
-    }
-    return 'nexus'
-  })
+  const sessionRef = useRef(`CX-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Date.now().toString(36).slice(-4).toUpperCase()}`)
+
+  useEffect(() => {
+    endCallRef.current = endCall
+    toggleMicRef.current = toggleMic
+  }, [endCall, toggleMic])
 
   // Sync --nx-accent → themeColor and data-va-theme → activeTheme via MutationObserver.
   // The observer covers both direct attribute changes and postMessage-driven style updates
@@ -135,7 +141,7 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
       const value = getComputedStyle(root).getPropertyValue('--nx-accent').trim()
       if (/^#[0-9a-fA-F]{6}$/.test(value)) setThemeColor(value)
       const t = root.dataset.vaTheme
-      if (t && THEMES.includes(t as VoiceThemeName)) setActiveTheme(t as VoiceThemeName)
+      if (t && !THEMES.includes(t as VoiceThemeName)) root.dataset.vaTheme = 'nexus'
     }
 
     readAccent()
@@ -147,20 +153,13 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
     return () => observer.disconnect()
   }, [])
 
-  // In-page theme switcher
-  const handleThemeChange = useCallback((t: VoiceThemeName) => {
-    document.documentElement.dataset.vaTheme = t
-    setActiveTheme(t)
-    // MutationObserver fires readAccent → updates themeColor automatically
-  }, [])
-
   // Auto-scroll transcript
   useEffect(() => {
     const el = transcriptRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [transcript, partialReply])
 
-  // Session countdown — starts when conversation goes live, counts down from 60s.
+  // Session countdown — hard cap for the full interaction.
   // Resets only when phase returns to 'connecting' (new session).
   // Auto-ends call when timer hits 0.
   const sessionActiveRef = useRef(false)
@@ -168,14 +167,14 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
     const live = phase !== 'connecting' && phase !== 'ended'
     if (live && !sessionActiveRef.current) {
       sessionActiveRef.current = true
-      setRecSecs(0)
+      setSessionSecs(0)
       timerRef.current = setInterval(() => {
-        setRecSecs(s => {
-          if (s >= MAX - 1) {
+        setSessionSecs(s => {
+          if (s >= SESSION_LIMIT_SECS - 1) {
             clearInterval(timerRef.current!)
             timerRef.current = null
-            endCall()
-            return MAX
+            endCallRef.current()
+            return SESSION_LIMIT_SECS
           }
           return s + 1
         })
@@ -184,10 +183,45 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
     if (phase === 'connecting' || phase === 'ended') {
       sessionActiveRef.current = false
       if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
-      if (phase === 'connecting') setRecSecs(0)
+      if (phase === 'connecting') setSessionSecs(0)
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
-  }, [phase, endCall])
+  }, [phase])
+
+  // Per-turn recording cap — prevents unlimited speech, but submits the turn
+  // to the agent instead of ending the whole call.
+  useEffect(() => {
+    if (!isRecording) {
+      if (recordTimerRef.current) {
+        clearInterval(recordTimerRef.current)
+        recordTimerRef.current = null
+      }
+      setRecordSecs(0)
+      return
+    }
+
+    setRecordSecs(0)
+    recordTimerRef.current = setInterval(() => {
+      setRecordSecs((s) => {
+        if (s >= RECORDING_LIMIT_SECS - 1) {
+          if (recordTimerRef.current) {
+            clearInterval(recordTimerRef.current)
+            recordTimerRef.current = null
+          }
+          toggleMicRef.current()
+          return RECORDING_LIMIT_SECS
+        }
+        return s + 1
+      })
+    }, 1000)
+
+    return () => {
+      if (recordTimerRef.current) {
+        clearInterval(recordTimerRef.current)
+        recordTimerRef.current = null
+      }
+    }
+  }, [isRecording])
 
   // Typing sound — fires blips as agent reply streams in
   const { onTextGrow } = useTypingSound(true)
@@ -253,16 +287,26 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
   const ended = phase === 'ended'
   const busy  = phase === 'thinking' || phase === 'transcribing' || phase === 'connecting'
 
-  // MM:SS — counts down from 1:00 to 0:00
-  const remaining = MAX - recSecs
-  const mm        = Math.floor(remaining / 60)
-  const ss        = (remaining % 60).toString().padStart(2, '0')
-  const countdown = `${mm}:${ss}`
+  const sessionRemaining = SESSION_LIMIT_SECS - sessionSecs
+  const recordingRemaining = RECORDING_LIMIT_SECS - recordSecs
+  const sessionCountdown = formatClock(sessionRemaining)
+  const recordingCountdown = formatClock(recordingRemaining)
 
   // SVG progress arc — depletes as time is used
   const R    = 68
   const CIRC = 2 * Math.PI * R
-  const dash = CIRC * (recSecs / MAX)
+  const dash = CIRC * (recordSecs / RECORDING_LIMIT_SECS)
+  const agentInitial = (agentName || 'AI').trim().charAt(0).toUpperCase()
+  const spokenTurns = transcript.filter((m) => m.role === 'user').length
+  const hasCustomerTurn = spokenTurns > 0
+  const branchLabel = shopCode ? shopCode.toUpperCase() : 'Global'
+  const handleManualEnd = useCallback(() => {
+    if (hasCustomerTurn || isRecording || phase !== 'idle') {
+      endCall()
+      return
+    }
+    onReset()
+  }, [endCall, hasCustomerTurn, isRecording, onReset, phase])
 
   return (
     <div className="nx-root">
@@ -274,7 +318,7 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
       {!validShop && (
         <div className="nx-shop-required">
           <div className="nx-shop-card">
-            <div className="nx-shop-icon">⚙️</div>
+            <div className="nx-shop-icon">AI</div>
             <h2 className="nx-shop-title">Agent Not Available</h2>
             <p className="nx-shop-body">
               This agent has not been configured for your location.
@@ -303,7 +347,8 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
               </svg>
             </div>
           </div>
-          <p className="nx-send-title">Sending to our team</p>
+          <p className="nx-send-title">Routing conversation packet</p>
+          <p className="nx-send-sub">Securing transcript, classification, and contact details</p>
           <div className="nx-send-dots">
             <span style={{ background: color }} />
             <span style={{ background: color }} />
@@ -325,7 +370,7 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
             </div>
 
             <h1 className="nx-conf-title" style={{ color }}>
-              {reviewData.sentiment === 'positive' ? 'Thank you!' : 'Sent!'}
+              {reviewData.sentiment === 'positive' ? 'Thank you' : 'Feedback captured'}
             </h1>
 
             <p className="nx-conf-msg">
@@ -333,8 +378,19 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
             </p>
 
             {reviewData.sentiment !== 'positive' && (
-              <p className="nx-conf-sub">We will reach out to you shortly.</p>
+              <p className="nx-conf-sub">The responsible team has the conversation context.</p>
             )}
+
+            <div className="nx-route-list">
+              <span>Transcript secured</span>
+              <span>Insight classified</span>
+              <span>{reviewData.sentiment === 'positive' ? 'Experience logged' : 'Team routing prepared'}</span>
+            </div>
+
+            <div className="nx-ref-code">
+              <span>Reference</span>
+              <strong>{sessionRef.current}</strong>
+            </div>
 
             {reviewData.sentiment !== 'positive' && (leadData.name || leadData.phone) && (
               <div className="nx-conf-contact" style={{ borderColor: color + '30' }}>
@@ -370,196 +426,235 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
           {phase === 'error' && error && (
             <div className="nx-err-banner">
               {error.includes('quota') || error.includes('429')
-                ? <>⚡ Service limit reached — please try again later</>
-                : <>⚠️ {error}</>}
+                ? <>Service limit reached — please try again later</>
+                : <>{error}</>}
             </div>
           )}
 
           {/* ── Header ──────────────────────────────────────────────────── */}
           <header className="nx-header">
             <div className="nx-hdr-l">
-              <span className="nx-live-dot" />
-              <span className="nx-company">{companyName || 'Customer Experience'}</span>
+              <span className="nx-brand-mark" style={{ borderColor: color + '55', color }}>
+                {agentInitial}
+              </span>
+              <span className="nx-hdr-copy">
+                <span className="nx-company">{companyName || 'Customer Experience'}</span>
+                <span className="nx-hdr-tag">AI Voice Agent</span>
+              </span>
             </div>
 
-            {/* Theme picker */}
-            <div className="nx-theme-picker" role="group" aria-label="Select theme">
-              {THEMES.map(t => (
+            <div className="nx-hdr-actions">
+              <div className="nx-lang-toggle">
                 <button
-                  key={t}
-                  className={`nx-theme-dot${activeTheme === t ? ' nx-theme-dot-active' : ''}`}
-                  style={{ background: THEME_ACCENTS[t] }}
-                  onClick={() => handleThemeChange(t)}
-                  aria-label={`${THEME_LABELS[t]} theme`}
-                  aria-pressed={activeTheme === t}
-                  title={THEME_LABELS[t]}
-                />
-              ))}
-            </div>
+                  className={`nx-lang-btn ${language.toLowerCase() === 'english' ? 'nx-lang-active' : ''}`}
+                  onClick={() => setLanguage('English')}
+                  disabled={isRecording}
+                  aria-pressed={language.toLowerCase() === 'english'}
+                >EN</button>
+                <button
+                  className={`nx-lang-btn ${language.toLowerCase() === 'urdu' ? 'nx-lang-active' : ''}`}
+                  onClick={() => setLanguage('Urdu')}
+                  disabled={isRecording}
+                  aria-pressed={language.toLowerCase() === 'urdu'}
+                >اردو</button>
+              </div>
 
-            <div className="nx-lang-toggle">
-              <button
-                className={`nx-lang-btn ${language.toLowerCase() === 'english' ? 'nx-lang-active' : ''}`}
-                onClick={() => setLanguage('English')}
-                disabled={isRecording}
-                aria-pressed={language.toLowerCase() === 'english'}
-              >EN</button>
-              <button
-                className={`nx-lang-btn ${language.toLowerCase() === 'urdu' ? 'nx-lang-active' : ''}`}
-                onClick={() => setLanguage('Urdu')}
-                disabled={isRecording}
-                aria-pressed={language.toLowerCase() === 'urdu'}
-              >اردو</button>
+              <button className="nx-header-end-btn" onClick={handleManualEnd} aria-label="End call">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none"
+                     stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.08 4.18 2 2 0 0 1 4.06 2h3a2 2 0 0 1 2 1.72c.13.95.35 1.88.66 2.76a2 2 0 0 1-.45 2.11L8 9.86a16 16 0 0 0 6.14 6.14l1.27-1.27a2 2 0 0 1 2.11-.45c.88.31 1.81.53 2.76.66A2 2 0 0 1 22 16.92z" />
+                  <path d="m2 2 20 20" />
+                </svg>
+                <span>End Call</span>
+              </button>
             </div>
           </header>
 
-          {/* ── Agent avatar ─────────────────────────────────────────────── */}
-          <div className="nx-orb-section">
-            <div className="nx-avatar-wrap">
-              <AnimatedAvatar phase={phase} color={color} />
-            </div>
-
-            <p className="nx-agent-name">{agentName || 'Review Agent'}</p>
-            <p className="nx-status-txt" role="status" aria-live="polite">
-              {error && phase === 'error' ? error : STATUS[phase]}
-            </p>
-          </div>
-
-          {/* ── Mood indicator ───────────────────────────────────────────── */}
-          {reviewData.sentiment && (
-            <div className="nx-mood"
-                 style={{ background: color + '12', borderColor: color + '28' }}>
-              <span className="nx-mood-dot" style={{ background: color, boxShadow: `0 0 8px ${color}` }} />
-              <span style={{ color, fontSize: '0.73rem', fontWeight: 600 }}>
-                {MOOD_LABEL[reviewData.sentiment]}
-              </span>
-            </div>
-          )}
-
-          {/* ── Transcript ───────────────────────────────────────────────── */}
-          <div ref={transcriptRef} className="nx-transcript scrollbar-thin">
-            {transcript.length === 0 && phase !== 'connecting' && (
-              <div className="nx-empty">
-                <p className="nx-empty-t">Your voice matters</p>
-                <p className="nx-empty-s">Press the button below to share your experience</p>
-              </div>
-            )}
-
-            {transcript.map((msg, i) => {
-              const isAgent = msg.role === 'assistant'
-              const isFirst = i === 0 || transcript[i - 1].role !== msg.role
-              return (
-                <div key={msg.id}
-                     className={`nx-row ${isAgent ? 'nx-row-l' : 'nx-row-r'} ${isFirst ? 'nx-first' : ''}`}>
-                  <div className={`nx-bubble ${isAgent ? 'nx-bbl-a' : 'nx-bbl-u'}`}
-                       style={!isAgent ? { borderColor: color + '38' } : {}}>
-                    {msg.content}
+          <div className="nx-main-grid">
+            <section className="nx-agent-rail">
+              <section className="nx-agent-panel" style={{ borderColor: color + '26' }}>
+                <div className="nx-agent-topline">
+                  <div className="nx-agent-meta">
+                    <span className="nx-agent-kicker">Experience Intelligence</span>
+                    <h1>{agentName || 'Review Agent'}</h1>
+                    <p>{branchLabel} secure voice session</p>
                   </div>
+                  <button className="nx-rail-end-btn" onClick={handleManualEnd} aria-label="End call">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none"
+                         stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.08 4.18 2 2 0 0 1 4.06 2h3a2 2 0 0 1 2 1.72c.13.95.35 1.88.66 2.76a2 2 0 0 1-.45 2.11L8 9.86a16 16 0 0 0 6.14 6.14l1.27-1.27a2 2 0 0 1 2.11-.45c.88.31 1.81.53 2.76.66A2 2 0 0 1 22 16.92z" />
+                      <path d="m2 2 20 20" />
+                    </svg>
+                    <span>End</span>
+                  </button>
                 </div>
-              )
-            })}
+                <div className="nx-agent-metrics">
+                  <span>
+                    <strong>{sessionCountdown}</strong>
+                    session
+                  </span>
+                  <span>
+                    <strong>{formatClock(RECORDING_LIMIT_SECS)}</strong>
+                    turn cap
+                  </span>
+                  <span>
+                    <strong>{spokenTurns}</strong>
+                    turns
+                  </span>
+                  <span>
+                    <strong>{language.toUpperCase().slice(0, 2)}</strong>
+                    lang
+                  </span>
+                </div>
+              </section>
 
-            {partialReply && (
-              <div className="nx-row nx-row-l nx-first">
-                <div className="nx-bubble nx-bbl-a">
-                  {partialReply}
-                  <span className="nx-cursor" style={{ background: color }} />
+              <div className="nx-orb-section">
+                <div className="nx-avatar-wrap">
+                  <AnimatedAvatar phase={phase} color={color} size="md" />
                 </div>
+
+                <p className="nx-agent-name">Live AI operator</p>
+                <p className="nx-status-txt" role="status" aria-live="polite">
+                  {error && phase === 'error' ? error : STATUS[phase]}
+                </p>
               </div>
-            )}
-          </div>
 
-          {/* ── Contact captured chip ────────────────────────────────────── */}
-          {(leadData.name || leadData.phone) && (
-            <div className="nx-chip">
-              <svg viewBox="0 0 24 24" className="w-3 h-3 flex-shrink-0"
-                   fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
-                <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-              <span>{[leadData.name, leadData.phone].filter(Boolean).join(' · ')}</span>
-            </div>
-          )}
-
-          {/* ── Record button zone ───────────────────────────────────────── */}
-          <div className="nx-btn-zone">
-            <div className="nx-btn-wrap">
-
-              {isRecording && (
-                <>
-                  <div className="nx-wr nx-wr1" style={{ borderColor: color }} />
-                  <div className="nx-wr nx-wr2" style={{ borderColor: color }} />
-                  <div className="nx-wr nx-wr3" style={{ borderColor: color }} />
-                </>
+              {reviewData.sentiment && (
+                <div className="nx-mood"
+                     style={{ background: color + '12', borderColor: color + '28' }}>
+                  <span className="nx-mood-dot" style={{ background: color, boxShadow: `0 0 8px ${color}` }} />
+                  <span style={{ color, fontSize: '0.73rem', fontWeight: 600 }}>
+                    {MOOD_LABEL[reviewData.sentiment]}
+                  </span>
+                </div>
               )}
 
-              {isRecording && (
-                <svg className="nx-arc" viewBox="0 0 150 150">
-                  <circle cx="75" cy="75" r={R}
-                    fill="none" stroke={color} strokeWidth="3.5"
-                    strokeLinecap="round"
-                    strokeDasharray={`${CIRC - dash} ${dash}`}
-                    transform="rotate(-90 75 75)"
-                    opacity="0.82" />
-                </svg>
-              )}
+              <div className="nx-btn-zone">
+                <div className="nx-btn-wrap">
 
-              <button
-                onClick={toggleMic}
-                disabled={busy}
-                className={`nx-btn ${isRecording ? 'nx-btn-rec' : busy ? 'nx-btn-busy' : 'nx-btn-idle'}`}
-                style={isRecording ? {
-                  background: `radial-gradient(circle at 38% 30%, ${color}CC 0%, ${color}66 50%, ${color}22 100%)`,
-                  boxShadow:  `0 0 0 3px ${color}DD, 0 0 0 9px ${color}30, 0 0 60px ${color}77, 0 14px 44px rgba(0,0,0,0.70)`,
-                } : {}}
-                aria-label={isRecording ? 'Stop recording' : 'Start recording'}
-              >
-                {isRecording ? (
-                  <svg viewBox="0 0 24 24" className="nx-bi">
-                    <rect x="6" y="6" width="12" height="12" rx="3" fill="white" />
-                  </svg>
-                ) : busy ? (
-                  <div className="nx-spin" style={{ borderTopColor: color }} />
-                ) : (
-                  <svg viewBox="0 0 24 24" className="nx-bi" fill="none"
-                       stroke="white" strokeWidth="1.8" strokeLinecap="round">
-                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                    <line x1="12" y1="19" x2="12" y2="23" />
-                    <line x1="8"  y1="23" x2="16" y2="23" />
-                  </svg>
-                )}
+                  {isRecording && (
+                    <>
+                      <div className="nx-wr nx-wr1" style={{ borderColor: color }} />
+                      <div className="nx-wr nx-wr2" style={{ borderColor: color }} />
+                      <div className="nx-wr nx-wr3" style={{ borderColor: color }} />
+                    </>
+                  )}
+
+                  {isRecording && (
+                    <svg className="nx-arc" viewBox="0 0 150 150">
+                      <circle cx="75" cy="75" r={R}
+                        fill="none" stroke={color} strokeWidth="3.5"
+                        strokeLinecap="round"
+                        strokeDasharray={`${CIRC - dash} ${dash}`}
+                        transform="rotate(-90 75 75)"
+                        opacity="0.82" />
+                    </svg>
+                  )}
+
+                  <button
+                    onClick={toggleMic}
+                    disabled={busy}
+                    className={`nx-btn ${isRecording ? 'nx-btn-rec' : busy ? 'nx-btn-busy' : 'nx-btn-idle'}`}
+                    style={isRecording ? ({ '--nx-rec-color': color } as CSSProperties) : undefined}
+                    aria-label={isRecording ? 'Stop recording' : 'Start recording'}
+                  >
+                    {isRecording ? (
+                      <>
+                        <span className="nx-rec-spectrum" aria-hidden>
+                          {[0, 1, 2, 3, 4].map((i) => <span key={i} />)}
+                        </span>
+                        <svg viewBox="0 0 24 24" className="nx-bi nx-stop-icon">
+                          <rect x="6" y="6" width="12" height="12" rx="3" fill="white" />
+                        </svg>
+                      </>
+                    ) : busy ? (
+                      <div className="nx-spin" style={{ borderTopColor: color }} />
+                    ) : (
+                      <svg viewBox="0 0 24 24" className="nx-bi" fill="none"
+                           stroke="white" strokeWidth="1.8" strokeLinecap="round">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                        <line x1="12" y1="19" x2="12" y2="23" />
+                        <line x1="8"  y1="23" x2="16" y2="23" />
+                      </svg>
+                    )}
+
+                    {isRecording && (
+                      <span className="nx-recdot" style={{ background: color }} />
+                    )}
+                  </button>
+                </div>
 
                 {isRecording && (
-                  <span className="nx-recdot" style={{ background: color }} />
+                  <div className="nx-countdown-badge" style={{ borderColor: color + '55', color }}>
+                    <span className="nx-countdown-time">{recordingCountdown}</span>
+                    <span className="nx-countdown-sub">turn left</span>
+                  </div>
                 )}
-              </button>
-            </div>
 
-            {isRecording && (
-              <div className="nx-countdown-badge" style={{ borderColor: color + '55', color }}>
-                <span className="nx-countdown-time">{countdown}</span>
-                <span className="nx-countdown-sub">remaining</span>
+                <p className="nx-btn-lbl">
+                  {isRecording         ? 'Recording active · tap to send'
+                   : busy              ? 'Please wait…'
+                   : phase === 'speaking' ? 'Agent is responding…'
+                   : 'Press to start secure voice capture'}
+                </p>
+
+                <div className="nx-end-policy">
+                  <span className="nx-close-cue">Say thanks or goodbye to close</span>
+                  <span className="nx-session-cue">Auto-submit at {formatClock(SESSION_LIMIT_SECS)}</span>
+                </div>
+
               </div>
-            )}
+            </section>
 
-            <p className="nx-btn-lbl">
-              {isRecording         ? 'Press to stop recording'
-               : busy              ? 'Please wait…'
-               : phase === 'speaking' ? 'Agent is responding…'
-               : 'Press to record your review'}
-            </p>
+            <section className="nx-conversation-panel" style={{ borderColor: color + '26' }}>
+              <div className="nx-conversation-head">
+                <span>Live conversation</span>
+                <span>{phase === 'error' ? 'Needs retry' : `Session ${sessionCountdown}`}</span>
+              </div>
 
-            {/* End Call — shown only after the customer has spoken at least once */}
-            {transcript.some((m) => m.role === 'user') && (
-              <button className="nx-end-btn" onClick={endCall} aria-label="End call">
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="none"
-                     stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M10.68 13.31a16 16 0 003.41 2.6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7 2 2 0 011.72 2v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.42 19.42 0 013.07 8.72 19.79 19.79 0 01.36 .54 2 2 0 012.18 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L6.16 9.9a16 16 0 004.52 3.41z"/>
-                  <line x1="23" y1="1" x2="1" y2="23"/>
-                </svg>
-                End Call
-              </button>
-            )}
+              <div ref={transcriptRef} className="nx-transcript scrollbar-thin">
+                {transcript.length === 0 && phase !== 'connecting' && (
+                  <div className="nx-empty">
+                    <p className="nx-empty-t">Voice channel standing by</p>
+                    <p className="nx-empty-s">Press the signal button and speak naturally</p>
+                  </div>
+                )}
+
+                {transcript.map((msg, i) => {
+                  const isAgent = msg.role === 'assistant'
+                  const isFirst = i === 0 || transcript[i - 1].role !== msg.role
+                  return (
+                    <div key={msg.id}
+                         className={`nx-row ${isAgent ? 'nx-row-l' : 'nx-row-r'} ${isFirst ? 'nx-first' : ''}`}>
+                      <div className={`nx-bubble ${isAgent ? 'nx-bbl-a' : 'nx-bbl-u'}`}
+                           style={!isAgent ? { borderColor: color + '38' } : {}}>
+                        {msg.content}
+                      </div>
+                    </div>
+                  )
+                })}
+
+                {partialReply && (
+                  <div className="nx-row nx-row-l nx-first">
+                    <div className="nx-bubble nx-bbl-a">
+                      {partialReply}
+                      <span className="nx-cursor" style={{ background: color }} />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {(leadData.name || leadData.phone) && (
+                <div className="nx-chip">
+                  <svg viewBox="0 0 24 24" className="w-3 h-3 flex-shrink-0"
+                       fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+                    <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  <span>{[leadData.name, leadData.phone].filter(Boolean).join(' · ')}</span>
+                </div>
+              )}
+            </section>
           </div>
 
         </div>
@@ -568,41 +663,18 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
   )
 }
 
-// ── Robot particle background ──────────────────────────────────────────────────
-const ROBOTS = Array.from({ length: 38 }, (_, i) => {
-  const s = (i * 7919 + 6271) % 65536
-  return {
-    x:    s % 100,
-    y:    (s * 3) % 100,
-    size: s % 5 < 1 ? 16 : s % 5 < 3 ? 11 : 8,
-    o:    0.06 + (s % 35) / 280,
-    t:    s % 3 === 0,
-    d:    (s % 40) / 10,
-    dur:  3.5 + (s % 30) / 10,
-  }
-})
-
 function NxBg() {
   return (
     <div className="nx-bg" aria-hidden>
       <div className="nx-grid" />
+      <div className="nx-scanline" />
+      <div className="nx-orbit nx-o1"><span /></div>
+      <div className="nx-orbit nx-o2"><span /></div>
+      <div className="nx-data-lane nx-dl1" />
+      <div className="nx-data-lane nx-dl2" />
       <div className="nx-blob nx-b1" />
       <div className="nx-blob nx-b2" />
       <div className="nx-blob nx-b3" />
-      {ROBOTS.map((r, i) => (
-        <div key={i}
-             className={`nx-robot-bg ${r.t ? 'nx-robot-t' : ''}`}
-             style={{
-               left:              `${r.x}%`,
-               top:               `${r.y}%`,
-               fontSize:          `${r.size}px`,
-               opacity:           r.o,
-               animationDelay:    `${r.d}s`,
-               animationDuration: `${r.dur}s`,
-             }}>
-          🤖
-        </div>
-      ))}
     </div>
   )
 }

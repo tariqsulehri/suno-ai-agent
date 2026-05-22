@@ -49,7 +49,7 @@ function reducer(state: VoiceAgentState, action: VoiceAgentAction): VoiceAgentSt
       return {
         ...state,
         phase:        action.endCall ? 'ended' : 'speaking',
-        transcript:   [...state.transcript, msg],
+        transcript:   action.fullText ? [...state.transcript, msg] : state.transcript,
         partialReply: '',
       }
     }
@@ -171,6 +171,7 @@ export function useVoiceAgent({
   // When the user clicks End Call while audio is playing, we don't cut mid-sentence.
   // Instead we set this flag and let onPlaybackEnd complete the transition.
   const endPendingRef = useRef(false)
+  const endAfterRecordingRef = useRef(false)
 
   function onPlaybackEnd() {
     if (endPendingRef.current) {
@@ -216,6 +217,7 @@ export function useVoiceAgent({
         signal,
       })
 
+      if (!res.ok) throw new Error(`Chat failed (${res.status})`)
       if (!res.body) throw new Error('No response body from /api/chat')
 
       const reader     = res.body.getReader()
@@ -223,58 +225,71 @@ export function useVoiceAgent({
       let   lineBuffer = ''
       let   receivedDone = false
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done || signal.aborted) break
+      async function handleStreamPart(part: string) {
+        if (!part.startsWith('data: ')) return
+        let event: Record<string, unknown>
+        try { event = JSON.parse(part.slice(6)) } catch { return }
 
-        lineBuffer += decoder.decode(value, { stream: true })
-        const parts = lineBuffer.split('\n\n')
-        lineBuffer  = parts.pop() ?? ''
+        if (event.error) {
+          dispatchFn?.({ type: 'ERROR', message: String(event.error) })
+          receivedDone = true
+          return
+        }
+        if (event.token)    dispatchFn?.({ type: 'STREAM_TOKEN', token: String(event.token) })
+        if (event.sentence) { if (outputModeRef.current === 'voice') enqueue(String(event.sentence)) }
+        if (event.lead) {
+          leadRef.current = { ...leadRef.current, ...(event.lead as LeadData) }
+          dispatchFn?.({ type: 'LEAD_UPDATE', lead: event.lead as LeadData })
+        }
+        if (event.review) {
+          reviewRef.current = { ...reviewRef.current, ...(event.review as ReviewData) }
+          dispatchFn?.({ type: 'REVIEW_UPDATE', review: event.review as ReviewData })
+        }
+        if (event.done) {
+          receivedDone = true
+          const fullText  = String(event.fullText ?? '')
+          const endCall   = Boolean(event.endCall)
+          const isPositive = reviewRef.current.sentiment === 'positive'
+          historyRef.current.push({ role: 'assistant', content: fullText })
 
-        for (const part of parts) {
-          if (!part.startsWith('data: ')) continue
-          let event: Record<string, unknown>
-          try { event = JSON.parse(part.slice(6)) } catch { continue }
-
-          if (event.error) {
-            dispatchFn?.({ type: 'ERROR', message: String(event.error) })
-            return
+          if (endCall) {
+            // Positive: save to DB but skip LLM summarization (no follow-up needed)
+            // Others:   full LLM summary + email + DB persist
+            await saveCallSummary(dispatchFn, isPositive)
           }
-          if (event.token)    dispatchFn?.({ type: 'STREAM_TOKEN', token: String(event.token) })
-          if (event.sentence) { if (outputModeRef.current === 'voice') enqueue(String(event.sentence)) }
-          if (event.lead) {
-            leadRef.current = { ...leadRef.current, ...(event.lead as LeadData) }
-            dispatchFn?.({ type: 'LEAD_UPDATE', lead: event.lead as LeadData })
-          }
-          if (event.review) {
-            reviewRef.current = { ...reviewRef.current, ...(event.review as ReviewData) }
-            dispatchFn?.({ type: 'REVIEW_UPDATE', review: event.review as ReviewData })
-          }
-          if (event.done) {
-            receivedDone = true
-            const fullText  = String(event.fullText ?? '')
-            const endCall   = Boolean(event.endCall)
-            const isPositive = reviewRef.current.sentiment === 'positive'
-            historyRef.current.push({ role: 'assistant', content: fullText })
 
-            if (endCall) {
-              // Positive: save to DB but skip LLM summarization (no follow-up needed)
-              // Others:   full LLM summary + email + DB persist
-              await saveCallSummary(dispatchFn, isPositive)
-            }
+          dispatchFn?.({ type: 'REPLY_COMPLETE', fullText, endCall })
 
-            dispatchFn?.({ type: 'REPLY_COMPLETE', fullText, endCall })
-
-            if (outputModeRef.current === 'text' && !endCall) {
-              dispatchFn?.({ type: 'SPEAKING_DONE' })
-            } else if (outputModeRef.current === 'voice' && !endCall && !isPlayingRef.current) {
-              // Race condition guard: audio already finished before this done event arrived.
-              // onPlaybackEnd already fired (phase was not 'speaking' then), so we must
-              // dispatch SPEAKING_DONE here or the phase will be stuck at 'speaking'.
-              dispatchFn?.({ type: 'SPEAKING_DONE' })
-            }
+          if (outputModeRef.current === 'text' && !endCall) {
+            dispatchFn?.({ type: 'SPEAKING_DONE' })
+          } else if (outputModeRef.current === 'voice' && !endCall && !isPlayingRef.current) {
+            // Race condition guard: audio already finished before this done event arrived.
+            // onPlaybackEnd already fired (phase was not 'speaking' then), so we must
+            // dispatch SPEAKING_DONE here or the phase will be stuck at 'speaking'.
+            dispatchFn?.({ type: 'SPEAKING_DONE' })
           }
         }
+      }
+
+      async function drainBufferedParts(includeTail = false) {
+        const parts = lineBuffer.split('\n\n')
+        lineBuffer  = parts.pop() ?? ''
+        for (const part of parts) await handleStreamPart(part)
+        if (includeTail && lineBuffer.trim()) {
+          await handleStreamPart(lineBuffer.trim())
+          lineBuffer = ''
+        }
+      }
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (signal.aborted) break
+
+        if (value) lineBuffer += decoder.decode(value, { stream: !done })
+        if (done) lineBuffer += decoder.decode()
+
+        await drainBufferedParts(done)
+        if (done) break
       }
 
       // Stream closed without a done event — unblock the UI so the user can retry
@@ -337,11 +352,13 @@ export function useVoiceAgent({
     continuous: continuousRecording,
     onAudioReady: async (blob) => {
       dispatch({ type: 'STOP_LISTENING' })
-      await processAudio(blob)
+      const endAfterTranscription = endAfterRecordingRef.current
+      endAfterRecordingRef.current = false
+      await processAudio(blob, { endAfterTranscription })
     },
   })
 
-  async function processAudio(blob: Blob) {
+  async function processAudio(blob: Blob, options: { endAfterTranscription?: boolean } = {}) {
     const form = new FormData()
     form.append('audio', blob, 'audio.webm')
     let userText: string
@@ -357,9 +374,17 @@ export function useVoiceAgent({
       dispatch({ type: 'ERROR', message: 'Transcription failed. Please try again.' })
       return
     }
-    if (!userText.trim()) { dispatch({ type: 'CONNECTED' }); return }
+    if (!userText.trim()) {
+      if (options.endAfterTranscription) completeEndCall()
+      else dispatch({ type: 'CONNECTED' })
+      return
+    }
     dispatch({ type: 'TRANSCRIBED', text: userText })
     historyRef.current.push({ role: 'user', content: userText })
+    if (options.endAfterTranscription) {
+      completeEndCall()
+      return
+    }
     await streamChat(historyRef.current, dispatch)
   }
 
@@ -478,7 +503,11 @@ export function useVoiceAgent({
   // If the agent is mid-sentence, let it finish speaking before transitioning.
   // We only kill the LLM stream (no new text) — existing audio plays to completion.
   const endCall = useCallback(() => {
-    if (isRecording) stopRec()
+    if (isRecording) {
+      endAfterRecordingRef.current = true
+      stopRec()
+      return
+    }
     networkAbortRef.current.abort()          // stop any incoming LLM stream
 
     if (isPlayingRef.current) {

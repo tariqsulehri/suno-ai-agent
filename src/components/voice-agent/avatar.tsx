@@ -4,7 +4,7 @@ import type { Phase } from '@/types'
 
 interface AvatarProps {
   phase: Phase
-  size?: 'sm' | 'lg'
+  size?: 'sm' | 'md' | 'lg'
   color?: string
 }
 
@@ -12,7 +12,7 @@ export function AnimatedAvatar({ phase, size = 'lg', color = '#00F5FF' }: Avatar
   const isSpeaking  = phase === 'speaking'
   const isListening = phase === 'listening' || phase === 'transcribing'
   const isThinking  = phase === 'thinking'
-  const dim         = size === 'lg' ? 160 : 44
+  const dim         = size === 'lg' ? 160 : size === 'md' ? 118 : 44
 
   return (
     <div className="relative flex items-center justify-center select-none"

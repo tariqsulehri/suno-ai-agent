@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ...quickSummary, email: null })
   }
 
-  if (conversation.length < 2) {
+  if (conversation.length < 1) {
     const briefSummary: CallSummary = {
       summary:   'The call was too brief to summarize.',
       keyPoints: [],

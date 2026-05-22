@@ -11,10 +11,7 @@ const envSchema = z.object({
 
   // ── Embed security ────────────────────────────────────────────────────────────
   EMBED_AUTH_ENABLED: z.enum(['true', 'false']).default('false'),
-}).refine(
-  (d) => !!(d.OPENAI_API_KEY || d.GROQ_API_KEY),
-  { message: 'Set either OPENAI_API_KEY or GROQ_API_KEY in your .env.local' }
-)
+})
 
 export type Env = z.infer<typeof envSchema>
 
@@ -33,3 +30,13 @@ function validateEnv(): Env {
 }
 
 export const env = validateEnv()
+
+export function hasLLMProvider(config: Env = env): boolean {
+  return Boolean(config.OPENAI_API_KEY || config.GROQ_API_KEY)
+}
+
+export function requireLLMProvider(config: Env = env): void {
+  if (!hasLLMProvider(config)) {
+    throw new Error('Set either OPENAI_API_KEY or GROQ_API_KEY before using AI routes')
+  }
+}

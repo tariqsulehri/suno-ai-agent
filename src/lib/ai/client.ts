@@ -1,5 +1,5 @@
 import OpenAI from 'openai'
-import { env } from '@/lib/config/env'
+import { env, requireLLMProvider } from '@/lib/config/env'
 
 // ── Provider detection ────────────────────────────────────────────────────────
 // Groq is free and OpenAI-compatible — preferred when GROQ_API_KEY is set.
@@ -8,6 +8,7 @@ import { env } from '@/lib/config/env'
 export type LLMProvider = 'groq' | 'openai'
 
 export function getProvider(): LLMProvider {
+  requireLLMProvider()
   return env.GROQ_API_KEY ? 'groq' : 'openai'
 }
 
@@ -26,6 +27,7 @@ let _client: OpenAI | null = null
 
 export function getLLMClient(apiKey?: string): OpenAI {
   if (apiKey) return new OpenAI({ apiKey })
+  requireLLMProvider()
   if (!_client) {
     if (env.GROQ_API_KEY) {
       _client = new OpenAI({

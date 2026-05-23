@@ -25,6 +25,53 @@ html, body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ── Login surface tokens ────────────────────────────────────────────────── */
+/* Dashboard login — management surface (blue) */
+.login-dashboard {
+  --login-bg:           linear-gradient(135deg, #0f172a, #111827 48%, #172033);
+  --login-card-bg:      rgba(15,23,42,0.88);
+  --login-card-border:  rgba(51,65,85,1);
+  --login-card-err:     rgba(239,68,68,0.4);
+  --login-kicker:       #93C5FD;
+  --login-accent:       #3B82F6;
+  --login-accent-focus: #60A5FA;
+  --login-accent-btn:   #2563EB;
+  --login-accent-btn-h: #3B82F6;
+  --login-field-border: rgba(51,65,85,1);
+  --login-field-err:    rgba(239,68,68,0.7);
+  --login-field-err-f:  #F87171;
+  --login-link:         #BFDBFE;
+}
+
+/* Agent login — operational surface (cyan) */
+.login-agent {
+  --login-bg:           linear-gradient(135deg, #06111f, #0f2636 48%, #081827);
+  --login-card-bg:      rgba(2,6,23,0.86);
+  --login-card-border:  rgba(21,94,117,0.7);
+  --login-card-err:     rgba(239,68,68,0.4);
+  --login-kicker:       #67E8F9;
+  --login-accent:       #22D3EE;
+  --login-accent-focus: #67E8F9;
+  --login-accent-btn:   #0891B2;
+  --login-accent-btn-h: #06B6D4;
+  --login-field-border: rgba(51,65,85,1);
+  --login-field-err:    rgba(239,68,68,0.7);
+  --login-field-err-f:  #F87171;
+  --login-link:         #A5F3FC;
+}
+
+/* ── Login shake ─────────────────────────────────────────────────────────── */
+@keyframes login-shake {
+  0%, 100% { transform: translateX(0); }
+  15%       { transform: translateX(-7px); }
+  30%       { transform: translateX(6px); }
+  45%       { transform: translateX(-5px); }
+  60%       { transform: translateX(4px); }
+  75%       { transform: translateX(-3px); }
+  90%       { transform: translateX(2px); }
+}
+.login-shake { animation: login-shake 0.45s ease-out; }
+
 /* ── Scrollbar ────────────────────────────────────────────────────────────── */
 .scrollbar-thin::-webkit-scrollbar        { width: 4px; }
 .scrollbar-thin::-webkit-scrollbar-track  { background: transparent; }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo, type CSSProperties } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -40,12 +40,6 @@ const CATEGORY_EMOJI: Record<string, string> = {
 const RATING_EMOJI: Record<number, string> = {
   5: '🌟', 4: '✨', 3: '😐', 2: '😞', 1: '😡',
 }
-const PRIORITY_EMOJI: Record<string, string> = {
-  complaint:  '🔴',
-  negative:   '🟡',
-  suggestion: '💡',
-}
-
 // ── Search types ───────────────────────────────────────────────────────────────
 interface SearchSource {
   id: string; shop: string; sentiment: string | null; category: string | null
@@ -56,42 +50,223 @@ interface SearchSource {
 interface SearchResult { answer: string; sources: SearchSource[] }
 
 // ── Palette ────────────────────────────────────────────────────────────────────
-const CHART_GRID = '#d8e0ea'
+const CHART_GRID = '#e5eaf2'
 const CHART_TICK = '#64748b'
 const DASHBOARD_ACCENT = '#2563eb'
-const DASHBOARD_ACCENT_DARK = '#1d4ed8'
 
-const surfaceCls = 'bg-white border border-slate-200 shadow-[0_18px_45px_rgba(15,23,42,0.08)]'
-const insetCls = 'bg-slate-50 border border-slate-200'
-const inputCls = 'w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-600 transition-colors'
-const secondaryBtnCls = 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-300'
+const surfaceCls = 'bg-[var(--dash-surface)] border border-[var(--dash-border)] shadow-[0_18px_50px_var(--dash-shadow)]'
+const insetCls = 'bg-[var(--dash-inset)] border border-[var(--dash-border)]'
+const inputCls = 'w-full bg-[var(--dash-input)] border border-[var(--dash-input-border)] rounded-lg px-4 py-2.5 text-sm text-[var(--dash-text)] placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-[var(--dash-ring)] focus:border-[var(--dash-accent)] transition-colors'
+
+type DashboardThemeKey = 'light' | 'day' | 'dark' | 'night'
+
+const DASHBOARD_THEMES: Record<DashboardThemeKey, {
+  name: string
+  bgClass: string
+  accent: string
+  accentDark: string
+  accentSoft: string
+  mode: 'light' | 'dark'
+  vars: CSSProperties
+  statPanel: string
+  tabHover: string
+  positivePanel: string
+  queuePanel: string
+}> = {
+  light: {
+    name: 'Light',
+    bgClass: 'bg-[radial-gradient(circle_at_top_left,rgba(37,99,235,0.12),transparent_30rem),radial-gradient(circle_at_bottom_right,rgba(20,184,166,0.10),transparent_28rem),linear-gradient(135deg,#f8fafc_0%,#eef4ff_48%,#ffffff_100%)]',
+    accent: '#1d4ed8',
+    accentDark: '#0f172a',
+    accentSoft: '#dbeafe',
+    mode: 'light',
+    vars: {
+      '--dash-surface': 'rgb(255 255 255 / 0.96)',
+      '--dash-inset': 'rgb(248 250 252 / 0.92)',
+      '--dash-input': '#ffffff',
+      '--dash-input-border': '#cbd5e1',
+      '--dash-border': '#dbe3ee',
+      '--dash-heading': '#0f172a',
+      '--dash-text': '#334155',
+      '--dash-muted': '#64748b',
+      '--dash-subtle': '#94a3b8',
+      '--dash-shadow': 'rgb(15 23 42 / 0.08)',
+      '--dash-ring': 'rgb(219 234 254 / 0.9)',
+      '--dash-accent': '#1d4ed8',
+    } as CSSProperties,
+    statPanel: 'bg-blue-50 text-blue-900 border-blue-100',
+    tabHover: 'hover:border-blue-300 hover:text-blue-700',
+    positivePanel: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    queuePanel: 'border-amber-200 bg-amber-50 text-amber-700',
+  },
+  day: {
+    name: 'Day',
+    bgClass: 'bg-[radial-gradient(circle_at_top_left,rgba(8,145,178,0.16),transparent_30rem),radial-gradient(circle_at_bottom_right,rgba(14,165,233,0.13),transparent_30rem),linear-gradient(135deg,#eff9fb_0%,#f8fbff_48%,#edf7ff_100%)]',
+    accent: '#0891b2',
+    accentDark: '#164e63',
+    accentSoft: '#cffafe',
+    mode: 'light',
+    vars: {
+      '--dash-surface': 'rgb(255 255 255 / 0.94)',
+      '--dash-inset': 'rgb(236 254 255 / 0.58)',
+      '--dash-input': '#ffffff',
+      '--dash-input-border': '#bae6fd',
+      '--dash-border': '#c7e6ef',
+      '--dash-heading': '#0c2630',
+      '--dash-text': '#274653',
+      '--dash-muted': '#5d7782',
+      '--dash-subtle': '#8aa2ac',
+      '--dash-shadow': 'rgb(8 47 73 / 0.09)',
+      '--dash-ring': 'rgb(207 250 254 / 0.9)',
+      '--dash-accent': '#0891b2',
+    } as CSSProperties,
+    statPanel: 'bg-cyan-50 text-cyan-900 border-cyan-100',
+    tabHover: 'hover:border-cyan-300 hover:text-cyan-700',
+    positivePanel: 'border-cyan-200 bg-cyan-50 text-cyan-700',
+    queuePanel: 'border-blue-200 bg-blue-50 text-blue-700',
+  },
+  dark: {
+    name: 'Dark',
+    bgClass: 'bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.18),transparent_31rem),radial-gradient(circle_at_bottom_right,rgba(20,184,166,0.12),transparent_30rem),linear-gradient(135deg,#101827_0%,#172033_50%,#0f172a_100%)]',
+    accent: '#60a5fa',
+    accentDark: '#2563eb',
+    accentSoft: '#1e3a8a',
+    mode: 'dark',
+    vars: {
+      '--dash-surface': 'rgb(23 32 51 / 0.92)',
+      '--dash-inset': 'rgb(15 23 42 / 0.66)',
+      '--dash-input': 'rgb(15 23 42 / 0.9)',
+      '--dash-input-border': 'rgb(71 85 105 / 0.9)',
+      '--dash-border': 'rgb(71 85 105 / 0.62)',
+      '--dash-heading': '#f8fafc',
+      '--dash-text': '#dbeafe',
+      '--dash-muted': '#a9bbd2',
+      '--dash-subtle': '#7f93ad',
+      '--dash-shadow': 'rgb(0 0 0 / 0.28)',
+      '--dash-ring': 'rgb(96 165 250 / 0.22)',
+      '--dash-accent': '#60a5fa',
+    } as CSSProperties,
+    statPanel: 'bg-slate-800/80 text-slate-100 border-slate-700',
+    tabHover: 'hover:border-blue-300 hover:text-blue-200',
+    positivePanel: 'border-emerald-500/30 bg-emerald-500/12 text-emerald-200',
+    queuePanel: 'border-amber-500/30 bg-amber-500/12 text-amber-200',
+  },
+  night: {
+    name: 'Night',
+    bgClass: 'bg-[radial-gradient(circle_at_top_left,rgba(129,140,248,0.20),transparent_30rem),radial-gradient(circle_at_bottom_right,rgba(45,212,191,0.10),transparent_29rem),linear-gradient(135deg,#030712_0%,#0b1020_46%,#111827_100%)]',
+    accent: '#a78bfa',
+    accentDark: '#4c1d95',
+    accentSoft: '#312e81',
+    mode: 'dark',
+    vars: {
+      '--dash-surface': 'rgb(12 18 32 / 0.94)',
+      '--dash-inset': 'rgb(17 24 39 / 0.72)',
+      '--dash-input': 'rgb(3 7 18 / 0.94)',
+      '--dash-input-border': 'rgb(75 85 99 / 0.82)',
+      '--dash-border': 'rgb(75 85 99 / 0.58)',
+      '--dash-heading': '#f9fafb',
+      '--dash-text': '#e5e7eb',
+      '--dash-muted': '#b7c0cf',
+      '--dash-subtle': '#818ca0',
+      '--dash-shadow': 'rgb(0 0 0 / 0.36)',
+      '--dash-ring': 'rgb(167 139 250 / 0.24)',
+      '--dash-accent': '#a78bfa',
+    } as CSSProperties,
+    statPanel: 'bg-violet-500/10 text-violet-100 border-violet-400/25',
+    tabHover: 'hover:border-violet-300 hover:text-violet-200',
+    positivePanel: 'border-teal-400/25 bg-teal-400/10 text-teal-100',
+    queuePanel: 'border-fuchsia-400/25 bg-fuchsia-400/10 text-fuchsia-100',
+  },
+}
 
 // ── Shared UI primitives ───────────────────────────────────────────────────────
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <div className={`${surfaceCls} rounded-xl p-5 lg:p-6 ${className}`}>{children}</div>
+  return <div className={`${surfaceCls} rounded-xl p-4 lg:p-5 ${className}`}>{children}</div>
 }
 function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">{children}</h2>
+  return <h2 className="mb-2 text-[0.68rem] font-black text-[var(--dash-muted)] uppercase tracking-[0.16em]">{children}</h2>
 }
 function Divider() {
   return <div className="border-t border-slate-200 my-8" />
 }
 
+function Dot({ color = DASHBOARD_ACCENT }: { color?: string }) {
+  return <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: color }} />
+}
+
 // ── KPI Card ───────────────────────────────────────────────────────────────────
 function KpiCard({
-  emoji, label, value, sub, color = '#6c8ef7', highlight = false,
+  label, value, sub, color = '#6c8ef7', highlight = false,
 }: {
-  emoji: string; label: string; value: string | number
+  label: string; value: string | number
   sub?: string; color?: string; highlight?: boolean
 }) {
   return (
-    <div className={`${surfaceCls} rounded-xl p-5 flex flex-col gap-1 border ${highlight ? 'border-blue-300 ring-4 ring-blue-50' : ''}`}>
-      <div className="flex items-center gap-2 mb-1">
-        <span className="text-xl">{emoji}</span>
-        <span className="text-xs text-slate-500 uppercase tracking-widest">{label}</span>
+    <div className={`${surfaceCls} flex min-h-[6.5rem] flex-col justify-between overflow-hidden rounded-xl border p-4 ${highlight ? 'border-blue-300 ring-2 ring-blue-50' : ''}`}>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[0.66rem] font-black text-[var(--dash-muted)] uppercase tracking-[0.14em]">{label}</span>
+        <span className="h-2 w-2 rounded-full shrink-0" style={{ background: color }} />
       </div>
-      <span className="text-3xl font-bold" style={{ color }}>{value}</span>
-      {sub && <span className="text-xs text-slate-500 mt-1">{sub}</span>}
+      <span className="mt-3 text-2xl font-black leading-none text-[var(--dash-heading)] sm:text-3xl">{value}</span>
+      {sub && <span className="mt-2 text-xs font-semibold text-[var(--dash-muted)]">{sub}</span>}
+      {!sub && <span className="mt-2 text-xs font-semibold text-[var(--dash-subtle)]">Current dataset</span>}
+    </div>
+  )
+}
+
+function InsightCard({
+  label,
+  value,
+  detail,
+  tone = 'blue',
+}: {
+  label: string
+  value: string | number
+  detail: string
+  tone?: 'blue' | 'green' | 'amber' | 'red' | 'slate'
+}) {
+  const tones = {
+    blue:  'border-blue-200 bg-blue-50/80 text-blue-700',
+    green: 'border-emerald-200 bg-emerald-50/80 text-emerald-700',
+    amber: 'border-amber-200 bg-amber-50/80 text-amber-700',
+    red:   'border-red-200 bg-red-50/80 text-red-700',
+    slate: 'border-slate-200 bg-slate-50/90 text-slate-700',
+  }
+  return (
+    <div className={`rounded-xl border p-3.5 ${tones[tone]}`}>
+      <p className="text-[0.64rem] font-black uppercase tracking-[0.14em] opacity-75">{label}</p>
+      <p className="mt-2 text-xl font-black leading-tight">{value}</p>
+      <p className="mt-1.5 text-xs font-semibold leading-5 opacity-80">{detail}</p>
+    </div>
+  )
+}
+
+function ThemeSelector({
+  selected,
+  onSelect,
+}: {
+  selected: DashboardThemeKey
+  onSelect: (theme: DashboardThemeKey) => void
+}) {
+  return (
+    <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
+      {(Object.entries(DASHBOARD_THEMES) as Array<[DashboardThemeKey, typeof DASHBOARD_THEMES[DashboardThemeKey]]>).map(([key, theme]) => {
+        const active = selected === key
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onSelect(key)}
+            className={`flex min-w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-black transition-colors ${
+              active ? 'text-white border-transparent shadow-sm' : 'bg-[var(--dash-input)] text-[var(--dash-text)] border-[var(--dash-border)] hover:border-slate-400'
+            }`}
+            style={active ? { background: theme.accentDark } : undefined}
+          >
+            <span className="h-2.5 w-2.5 rounded-full" style={{ background: theme.accent }} />
+            {theme.name}
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -101,13 +276,13 @@ function SentimentRow({ sentiment, count, total }: { sentiment: string; count: n
   const pct   = total ? Math.round((count / total) * 100) : 0
   const color = SENTIMENT_COLOR[sentiment] ?? '#6c8ef7'
   return (
-    <div className="flex items-center gap-3 py-2">
-      <span className="text-lg w-6">{SENTIMENT_EMOJI[sentiment]}</span>
-      <span className="text-sm text-slate-700 w-24">{SENTIMENT_LABEL[sentiment]}</span>
-      <div className="flex-1 bg-slate-100 rounded-full h-3">
-        <div className="h-3 rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />
+    <div className="flex items-center gap-3 py-2.5">
+      <Dot color={color} />
+      <span className="text-sm font-semibold text-slate-700 w-24">{SENTIMENT_LABEL[sentiment]}</span>
+      <div className="flex-1 bg-slate-100 rounded-full h-2.5">
+        <div className="h-2.5 rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />
       </div>
-      <span className="text-sm font-bold w-8 text-right" style={{ color }}>{count}</span>
+      <span className="text-sm font-black w-8 text-right" style={{ color }}>{count}</span>
       <span className="text-xs text-slate-500 w-10 text-right">{pct}%</span>
     </div>
   )
@@ -125,20 +300,19 @@ function CategoryRow({ name, data, maxTotal }: {
   const pctSugg = maxTotal ? (data.suggestion / maxTotal) * 100 : 0
 
   return (
-    <div className="grid grid-cols-[auto_minmax(5rem,8rem)_1fr] sm:grid-cols-[auto_8rem_1fr_auto] items-center gap-3 py-2 border-b border-slate-100 last:border-0">
-      <span className="text-lg w-6">{CATEGORY_EMOJI[name] ?? '📌'}</span>
-      <span className="text-sm text-slate-700 capitalize min-w-0 break-words">{name}</span>
+    <div className="grid grid-cols-[minmax(5rem,8rem)_1fr] sm:grid-cols-[8rem_1fr_auto] items-center gap-3 py-3 border-b border-slate-100 last:border-0">
+      <span className="text-sm font-bold text-slate-700 capitalize min-w-0 break-words">{name}</span>
       <div className="flex min-w-0 gap-0.5 h-5 rounded-lg overflow-hidden bg-slate-100">
-        {data.positive   > 0 && <div style={{ width: `${pctPos}%`,  background: '#22c55e' }} title={`✅ ${data.positive}`} />}
-        {data.negative   > 0 && <div style={{ width: `${pctNeg}%`,  background: '#f97316' }} title={`⚠️ ${data.negative}`} />}
-        {data.complaint  > 0 && <div style={{ width: `${pctComp}%`, background: '#ef4444' }} title={`🚨 ${data.complaint}`} />}
-        {data.suggestion > 0 && <div style={{ width: `${pctSugg}%`, background: '#6366f1' }} title={`💡 ${data.suggestion}`} />}
+        {data.positive   > 0 && <div style={{ width: `${pctPos}%`,  background: '#22c55e' }} title={`Positive ${data.positive}`} />}
+        {data.negative   > 0 && <div style={{ width: `${pctNeg}%`,  background: '#f97316' }} title={`Negative ${data.negative}`} />}
+        {data.complaint  > 0 && <div style={{ width: `${pctComp}%`, background: '#ef4444' }} title={`Complaint ${data.complaint}`} />}
+        {data.suggestion > 0 && <div style={{ width: `${pctSugg}%`, background: '#6366f1' }} title={`Suggestion ${data.suggestion}`} />}
       </div>
-      <div className="col-span-3 sm:col-span-1 flex gap-2 text-xs flex-wrap justify-start sm:justify-end">
-        <span className="text-[#22c55e]">✅ {data.positive}</span>
-        <span className="text-[#f97316]">⚠️ {data.negative}</span>
-        <span className="text-[#ef4444]">🚨 {data.complaint}</span>
-        {data.suggestion > 0 && <span className="text-[#6366f1]">💡 {data.suggestion}</span>}
+      <div className="col-span-2 sm:col-span-1 flex gap-2 text-xs font-bold flex-wrap justify-start sm:justify-end">
+        <span className="text-[#22c55e]">P {data.positive}</span>
+        <span className="text-[#f97316]">N {data.negative}</span>
+        <span className="text-[#ef4444]">C {data.complaint}</span>
+        {data.suggestion > 0 && <span className="text-[#6366f1]">S {data.suggestion}</span>}
       </div>
     </div>
   )
@@ -149,13 +323,12 @@ function RatingBar({ rating, count, max }: { rating: number; count: number; max:
   const pct = max ? Math.round((count / max) * 100) : 0
   const colors = ['', '#ef4444', '#f97316', '#eab308', '#84cc16', '#22c55e']
   return (
-    <div className="flex items-center gap-3 py-1">
-      <span className="text-base w-6">{RATING_EMOJI[rating]}</span>
-      <span className="text-xs text-slate-500 w-4">{rating}★</span>
+    <div className="flex items-center gap-3 py-1.5">
+      <span className="text-xs font-black text-slate-500 w-8">{rating} star</span>
       <div className="flex-1 bg-slate-100 rounded-full h-2.5">
         <div className="h-2.5 rounded-full" style={{ width: `${pct}%`, background: colors[rating] }} />
       </div>
-      <span className="text-xs font-semibold text-slate-700 w-6 text-right">{count}</span>
+      <span className="text-xs font-black text-slate-700 w-6 text-right">{count}</span>
     </div>
   )
 }
@@ -169,50 +342,44 @@ function ShopCard({ shop, rank }: {
     : shop.satisfaction >= 45 ? '#eab308'
     : '#ef4444'
 
-  const scoreEmoji = !shop.satisfaction ? '—'
-    : shop.satisfaction >= 70 ? '😊'
-    : shop.satisfaction >= 45 ? '😐'
-    : '😟'
-
   return (
-    <div className={`${surfaceCls} rounded-xl p-5`}>
+    <div className={`${surfaceCls} rounded-2xl p-5`}>
       {/* Header */}
       <div className="flex items-start justify-between mb-4 gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="text-xs text-slate-500 font-bold">#{rank}</span>
-            <span className="text-sm font-bold text-slate-900 break-words">🏪 {shop.name}</span>
+            <span className="grid h-7 w-7 place-items-center rounded-full bg-slate-900 text-xs font-black text-white">#{rank}</span>
+            <span className="text-base font-black text-slate-950 break-words">{shop.name}</span>
           </div>
-          {shop.city && <p className="text-xs text-slate-500 mt-0.5">📍 {shop.city}</p>}
+          {shop.city && <p className="text-sm font-semibold text-slate-500 mt-1">{shop.city}</p>}
         </div>
         <div className="text-right">
-          <div className="text-2xl font-black" style={{ color: scoreColor }}>
+          <div className="text-3xl font-black" style={{ color: scoreColor }}>
             {shop.satisfaction !== null ? `${shop.satisfaction}%` : '—'}
           </div>
-          <div className="text-lg">{scoreEmoji}</div>
-          <div className="text-xs text-slate-500">Satisfaction</div>
+          <div className="text-xs font-bold uppercase tracking-widest text-slate-500">Satisfaction</div>
         </div>
       </div>
 
       {/* Sentiment split */}
       <div className="flex gap-2 mb-4">
         {[
-          { emoji: '✅', label: 'Positive',   count: shop.positive,   color: '#22c55e' },
-          { emoji: '⚠️', label: 'Negative',   count: shop.negative,   color: '#f97316' },
-          { emoji: '🚨', label: 'Complaint',  count: shop.complaint,  color: '#ef4444' },
-          { emoji: '💡', label: 'Suggestion', count: shop.suggestion, color: '#6366f1' },
+          { label: 'Positive',   count: shop.positive,   color: '#22c55e' },
+          { label: 'Negative',   count: shop.negative,   color: '#f97316' },
+          { label: 'Complaint',  count: shop.complaint,  color: '#ef4444' },
+          { label: 'Idea', count: shop.suggestion, color: '#6366f1' },
         ].map((s) => (
-          <div key={s.label} className="flex-1 bg-slate-50 rounded-lg p-2 text-center border border-slate-100 min-w-0">
-            <div className="text-base">{s.emoji}</div>
-            <div className="text-lg font-bold" style={{ color: s.color }}>{s.count}</div>
-            <div className="text-xs text-slate-500 truncate">{s.label}</div>
+          <div key={s.label} className="flex-1 bg-slate-50 rounded-xl p-2.5 text-center border border-slate-100 min-w-0">
+            <div className="mx-auto mb-1 h-1.5 w-8 rounded-full" style={{ background: s.color }} />
+            <div className="text-xl font-black" style={{ color: s.color }}>{s.count}</div>
+            <div className="text-[0.68rem] font-bold text-slate-500 truncate">{s.label}</div>
           </div>
         ))}
       </div>
 
       {/* Avg rating */}
       <div className="flex items-center justify-between mb-3 text-sm">
-        <span className="text-slate-500">⭐ Avg Rating</span>
+        <span className="text-slate-500">Avg rating</span>
         <span className="font-bold text-yellow-400">
           {shop.avgRating !== null ? `${shop.avgRating} / 5` : '—'}
         </span>
@@ -256,6 +423,21 @@ function StatusBadge({ status }: { status: string }) {
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold text-white"
           style={{ background: meta.color }}>
       {meta.label}
+    </span>
+  )
+}
+
+function TicketBadge({ ticketId, priority }: { ticketId: string | null; priority?: string | null }) {
+  if (!ticketId) return null
+  const color = priority === 'urgent' ? 'red' : priority === 'high' ? 'amber' : 'slate'
+  const cls = color === 'red'
+    ? 'border-red-200 bg-red-50 text-red-700'
+    : color === 'amber'
+      ? 'border-amber-200 bg-amber-50 text-amber-700'
+      : 'border-slate-200 bg-slate-50 text-slate-700'
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-black ${cls}`}>
+      {ticketId}
     </span>
   )
 }
@@ -454,6 +636,7 @@ function TranscriptModal({
                   {CATEGORY_EMOJI[review.category]} {review.category}
                 </span>
               )}
+              <TicketBadge ticketId={review.ticketId} priority={review.ticketPriority} />
               {review.rating && (
                 <span className="text-xs text-yellow-500 font-semibold">{RATING_EMOJI[review.rating]} {review.rating}★</span>
               )}
@@ -536,6 +719,27 @@ function TranscriptModal({
               <p className="text-sm text-slate-700 leading-relaxed bg-slate-50 rounded-xl p-4 border border-slate-200">
                 {review.summary}
               </p>
+            </div>
+          )}
+
+          {!editLead && review.ticketId && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Ticket</p>
+                <p className="mt-1 font-mono text-sm font-black text-slate-900">{review.ticketId}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Priority</p>
+                <p className="mt-1 text-sm font-black capitalize text-slate-900">{review.ticketPriority ?? 'normal'}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">SLA</p>
+                <p className="mt-1 text-sm font-black text-slate-900">
+                  {review.slaDueAt
+                    ? new Date(review.slaDueAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+                    : 'Queued'}
+                </p>
+              </div>
             </div>
           )}
 
@@ -882,6 +1086,7 @@ function ReviewsPanel({ reviews: initial }: { reviews: DashboardData['recentRevi
                         {CATEGORY_EMOJI[r.category]} {r.category}
                       </span>
                     )}
+                    <TicketBadge ticketId={r.ticketId} priority={r.ticketPriority} />
                     <StatusBadge status={r.status} />
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -909,10 +1114,10 @@ function ReviewsPanel({ reviews: initial }: { reviews: DashboardData['recentRevi
 
 // ── AI Search Panel ────────────────────────────────────────────────────────────
 const EXAMPLE_QUERIES = [
-  '🔍 Which outlet has the most hygiene complaints?',
-  '👤 What are customers saying about staff behaviour?',
-  '🍽️ Show me all negative product reviews',
-  '😊 Which shop has the highest satisfaction?',
+  'Which outlet has the most hygiene complaints?',
+  'What are customers saying about staff behaviour?',
+  'Show me all negative product reviews',
+  'Which shop has the highest satisfaction?',
 ]
 
 function SearchPanel() {
@@ -940,10 +1145,17 @@ function SearchPanel() {
   }
 
   return (
-    <Card className="mb-6">
-      <SectionTitle>🤖 AI-Powered Review Search</SectionTitle>
-      <p className="text-xs text-slate-500 mb-4">Ask any question about your reviews in plain English</p>
-      <div className="flex flex-col sm:flex-row gap-2 mb-4">
+    <Card className="mb-5">
+      <div className="mb-3 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
+        <div>
+          <SectionTitle>Review Intelligence</SectionTitle>
+          <p className="text-xs font-semibold text-[var(--dash-muted)]">Ask the review database a business question.</p>
+        </div>
+        <span className="w-fit rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-widest text-blue-700">
+          AI search
+        </span>
+      </div>
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row">
         <input
           ref={inputRef}
           type="text" value={query}
@@ -954,16 +1166,16 @@ function SearchPanel() {
         />
         <button
           onClick={() => search(query)} disabled={loading || !query.trim()}
-          className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-sm font-semibold rounded-lg transition-colors"
+          className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-40"
         >
-          {loading ? '...' : '🔍 Ask'}
+          {loading ? '...' : 'Ask'}
         </button>
       </div>
       {!result && !loading && (
         <div className="flex flex-wrap gap-2">
           {EXAMPLE_QUERIES.map((q) => (
             <button key={q} onClick={() => search(q)}
-              className="text-xs px-3 py-1.5 bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-700 rounded-full border border-slate-200 transition-colors">
+              className="rounded-full border border-[var(--dash-border)] bg-[var(--dash-inset)] px-3 py-1.5 text-xs text-[var(--dash-muted)] transition-colors hover:bg-blue-50 hover:text-blue-700">
               {q}
             </button>
           ))}
@@ -979,13 +1191,13 @@ function SearchPanel() {
       {result && (
         <div className="mt-4">
           <div className="bg-blue-50 rounded-xl p-4 mb-4 border-l-4 border-blue-600">
-            <p className="text-xs text-blue-700 font-bold mb-2 uppercase tracking-widest">🤖 AI Analysis</p>
+            <p className="text-xs text-blue-700 font-bold mb-2 uppercase tracking-widest">AI analysis</p>
             <p className="text-slate-800 text-sm leading-relaxed">{result.answer}</p>
           </div>
           {result.sources.length > 0 && (
             <>
               <p className="text-xs text-slate-500 mb-3 uppercase tracking-widest">
-                📋 Based on {result.sources.length} matching review{result.sources.length !== 1 ? 's' : ''}
+                Based on {result.sources.length} matching review{result.sources.length !== 1 ? 's' : ''}
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {result.sources.map((s) => (
@@ -1035,6 +1247,18 @@ function EmptyState() {
 export function DashboardClient({ data }: { data: DashboardData | null }) {
   const router = useRouter()
   const [tab, setTab] = useState<'analytics' | 'reviews' | 'shops'>('analytics')
+  const [themeKey, setThemeKey] = useState<DashboardThemeKey>('light')
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem('dashboard-theme') as DashboardThemeKey | null
+    if (saved && saved in DASHBOARD_THEMES) setThemeKey(saved)
+    else if (saved) window.localStorage.removeItem('dashboard-theme')
+  }, [])
+
+  const selectTheme = useCallback((nextTheme: DashboardThemeKey) => {
+    setThemeKey(nextTheme)
+    window.localStorage.setItem('dashboard-theme', nextTheme)
+  }, [])
 
   if (!data) return <EmptyState />
 
@@ -1057,73 +1281,98 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
   const maxRating    = Math.max(...ratingDist.map((r) => r.count), 1)
   const rankedShops  = [...shops].sort((a, b) => (b.satisfaction ?? 0) - (a.satisfaction ?? 0))
   const maxCatTotal  = Math.max(...Object.values(categorySentiment).map((c) => c.total), 1)
+  const pendingFollowUps = recentReviews.filter((r) => r.sentiment !== 'positive' && r.status === 'pending').length
+  const complaintRate = totalReviews ? Math.round((complaint / totalReviews) * 100) : 0
+  const positiveRate = totalReviews ? Math.round((positive / totalReviews) * 100) : 0
+  const bestShop = rankedShops.find((shop) => shop.total > 0)
+  const lowestShop = [...shops]
+    .filter((shop) => shop.total > 0)
+    .sort((a, b) => (a.satisfaction ?? -1) - (b.satisfaction ?? -1))[0]
 
-  const satisfactionEmoji = !satisfaction ? '—'
-    : satisfaction >= 70 ? '😊' : satisfaction >= 45 ? '😐' : '😟'
   const satisfactionColor = !satisfaction ? '#94a3b8'
     : satisfaction >= 70 ? '#22c55e' : satisfaction >= 45 ? '#eab308' : '#ef4444'
+  const theme = DASHBOARD_THEMES[themeKey] ?? DASHBOARD_THEMES.light
+
+  const tabBtn = (active: boolean) => `px-4 py-2.5 rounded-xl text-sm font-black transition-colors border ${
+    active
+      ? 'text-white border-transparent shadow-sm'
+      : `bg-[var(--dash-input)] text-[var(--dash-text)] border-[var(--dash-border)] ${theme.tabHover}`
+  }`
 
   return (
-    <div className="min-h-dvh bg-[linear-gradient(135deg,#f8fafc_0%,#eef4ff_48%,#f5f7fb_100%)] text-slate-900 font-sans">
-      <div className="mx-auto w-full max-w-[1720px] px-4 py-6 sm:px-6 lg:px-8 xl:px-10">
+    <div
+      className={`dash-dashboard min-h-dvh ${theme.bgClass} text-[var(--dash-text)] font-sans`}
+      data-dashboard-theme={themeKey}
+      style={theme.vars}
+    >
+      <div className="mx-auto w-full max-w-[1720px] px-4 py-5 sm:px-6 lg:px-8">
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between mb-8 flex-wrap gap-4">
-        <div className="min-w-0">
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-950 break-words">📊 Customer Review Analytics</h1>
-          <p className="text-slate-400 text-sm mt-1">Management Dashboard · Real-time outlet performance</p>
-          {/* Tab bar */}
-          <div className="flex gap-2 mt-4 flex-wrap">
-            <button
-              onClick={() => setTab('analytics')}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors border ${
-                tab === 'analytics'
-                  ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                  : `${secondaryBtnCls}`
-              }`}
-            >
-              📊 Analytics
+      <div className={`${surfaceCls} mb-5 overflow-hidden rounded-2xl`} style={{ borderTop: `3px solid ${theme.accent}` }}>
+        <div className="grid gap-5 p-4 sm:p-5 lg:grid-cols-[1fr_auto] lg:p-6">
+          <div className="min-w-0">
+            <p className="mb-2 text-[0.68rem] font-black uppercase tracking-[0.2em]" style={{ color: theme.accent }}>
+              Customer Experience Intelligence
+            </p>
+            <h1 className="max-w-4xl text-2xl font-black leading-tight text-[var(--dash-heading)] sm:text-3xl lg:text-4xl">
+              Outlet performance and review analytics
+            </h1>
+            <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-[var(--dash-muted)]">
+              Monitor complaint risk, satisfaction quality, and follow-up work across every shop.
+            </p>
+          </div>
+
+          <div className="grid min-w-[min(100%,23rem)] grid-cols-3 gap-2">
+            <div className={`rounded-xl border p-3 ${theme.statPanel}`}>
+              <p className="text-[0.62rem] font-black uppercase tracking-widest opacity-75">Reviews</p>
+              <p className="mt-1.5 text-xl font-black">{totalReviews}</p>
+            </div>
+            <div className={`rounded-xl border p-3 ${theme.positivePanel}`}>
+              <p className="text-[0.62rem] font-black uppercase tracking-widest opacity-80">Positive</p>
+              <p className="mt-1.5 text-xl font-black">{positiveRate}%</p>
+            </div>
+            <div className={`rounded-xl border p-3 ${theme.queuePanel}`}>
+              <p className="text-[0.62rem] font-black uppercase tracking-widest opacity-80">Queue</p>
+              <p className="mt-1.5 text-xl font-black">{pendingFollowUps}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-[var(--dash-border)] bg-[var(--dash-inset)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 lg:px-6">
+          <div className="flex gap-2 overflow-x-auto pb-1 sm:pb-0">
+            <button onClick={() => setTab('analytics')} className={tabBtn(tab === 'analytics')} style={tab === 'analytics' ? { background: theme.accentDark } : undefined}>
+              Analytics
             </button>
-            <button
-              onClick={() => setTab('reviews')}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors border ${
-                tab === 'reviews'
-                  ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                  : `${secondaryBtnCls}`
-              }`}
-            >
-              📋 Reviews
-              {data.recentReviews.filter((r) => r.sentiment !== 'positive' && r.status === 'pending').length > 0 && (
-                <span className="ml-2 bg-orange-500 text-white text-xs rounded-full px-1.5 py-0.5 font-bold">
-                  {data.recentReviews.filter((r) => r.sentiment !== 'positive' && r.status === 'pending').length}
+            <button onClick={() => setTab('reviews')} className={tabBtn(tab === 'reviews')} style={tab === 'reviews' ? { background: theme.accentDark } : undefined}>
+              Reviews
+              {pendingFollowUps > 0 && (
+                <span className="ml-2 rounded-full bg-orange-500 px-2 py-0.5 text-xs font-black text-white">
+                  {pendingFollowUps}
                 </span>
               )}
             </button>
-            <button
-              onClick={() => setTab('shops')}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors border ${
-                tab === 'shops'
-                  ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                  : `${secondaryBtnCls}`
-              }`}
-            >
-              🏪 Shops
+            <button onClick={() => setTab('shops')} className={tabBtn(tab === 'shops')} style={tab === 'shops' ? { background: theme.accentDark } : undefined}>
+              Shops
             </button>
           </div>
-        </div>
-        <div className="text-left sm:text-right text-xs text-slate-500">
-          <p>🗓️ Last updated: {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
-          <p className="mt-1">🗄️ Powered by SQLite · sqlite-vec</p>
-          {/* Logout button */}
-          <button
-            onClick={async () => {
-              await fetch('/api/dashboard/auth', { method: 'DELETE' })
-              router.push('/dashboard/login')
-            }}
-            className="mt-2 text-xs text-slate-500 hover:text-red-600 transition-colors"
-          >
-            Logout
-          </button>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            <ThemeSelector selected={themeKey} onSelect={selectTheme} />
+            <div className="flex flex-wrap items-center gap-2.5 text-xs font-bold text-[var(--dash-muted)]">
+              <span>Updated {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+              <span className="hidden h-1 w-1 rounded-full bg-[var(--dash-border)] sm:block" />
+              <span>SQLite demo data</span>
+            </div>
+            <button
+              onClick={async () => {
+                await fetch('/api/dashboard/auth', { method: 'DELETE' })
+                router.push('/dashboard/login')
+              }}
+              className="w-fit rounded-full border border-[var(--dash-border)] bg-[var(--dash-input)] px-3 py-1.5 text-xs font-black text-[var(--dash-muted)] transition-colors hover:border-red-300 hover:text-red-500"
+            >
+              Logout
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1134,27 +1383,62 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
           <SearchPanel />
 
           {/* ── Executive KPIs ──────────────────────────────────────────── */}
-          <SectionTitle>Executive Summary</SectionTitle>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7 gap-4 mb-8">
-            <KpiCard emoji="📊" label="Total"       value={totalReviews} color={DASHBOARD_ACCENT} highlight />
-            <KpiCard emoji="✅" label="Positive"     value={positive}
+          <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
+            <div>
+              <SectionTitle>Executive Summary</SectionTitle>
+              <h2 className="text-xl font-black text-[var(--dash-heading)]">Business health snapshot</h2>
+            </div>
+            <p className="max-w-2xl text-xs font-semibold leading-5 text-[var(--dash-muted)]">
+              The cards below separate volume, customer sentiment, and operational risk for faster management review.
+            </p>
+          </div>
+          <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-7">
+            <KpiCard label="Total"       value={totalReviews} color={theme.accent} highlight />
+            <KpiCard label="Positive"     value={positive}
               sub={`${totalReviews ? Math.round(positive / totalReviews * 100) : 0}%`}
               color="#22c55e" />
-            <KpiCard emoji="⚠️" label="Negative"    value={negative}
+            <KpiCard label="Negative"    value={negative}
               sub={`${totalReviews ? Math.round(negative / totalReviews * 100) : 0}%`}
               color="#f97316" />
-            <KpiCard emoji="🚨" label="Complaints"  value={complaint}
+            <KpiCard label="Complaints"  value={complaint}
               sub={`${totalReviews ? Math.round(complaint / totalReviews * 100) : 0}%`}
               color="#ef4444" />
-            <KpiCard emoji="💡" label="Suggestions" value={suggestion}
+            <KpiCard label="Suggestions" value={suggestion}
               sub={`${totalReviews ? Math.round(suggestion / totalReviews * 100) : 0}%`}
-              color={DASHBOARD_ACCENT_DARK} />
-            <KpiCard emoji="⭐" label="Avg Rating"
+              color={theme.accent} />
+            <KpiCard label="Avg Rating"
               value={avgRating !== null ? `${avgRating}/5` : '—'}
               color="#eab308" />
-            <KpiCard emoji={satisfactionEmoji} label="Satisfaction"
+            <KpiCard label="Satisfaction"
               value={satisfaction !== null ? `${satisfaction}%` : '—'}
               color={satisfactionColor} />
+          </div>
+
+          <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <InsightCard
+              label="Complaint Rate"
+              value={`${complaintRate}%`}
+              detail={complaintRate >= 20 ? 'Needs active management' : 'Within current tolerance'}
+              tone={complaintRate >= 20 ? 'red' : 'green'}
+            />
+            <InsightCard
+              label="Follow-up Queue"
+              value={pendingFollowUps}
+              detail={pendingFollowUps === 0 ? 'No open recovery work' : 'Open customer recovery items'}
+              tone={pendingFollowUps > 0 ? 'amber' : 'green'}
+            />
+            <InsightCard
+              label="Strongest Outlet"
+              value={bestShop?.name ?? '—'}
+              detail={bestShop?.satisfaction !== null && bestShop?.satisfaction !== undefined ? `${bestShop.satisfaction}% satisfaction` : 'No rated outlet yet'}
+              tone="blue"
+            />
+            <InsightCard
+              label="Lowest Rated"
+              value={lowestShop?.name ?? '—'}
+              detail={lowestShop?.satisfaction !== null && lowestShop?.satisfaction !== undefined ? `${lowestShop.satisfaction}% satisfaction` : 'No rated outlet yet'}
+              tone={lowestShop && (lowestShop.satisfaction ?? 100) < 60 ? 'red' : 'slate'}
+            />
           </div>
 
           <Divider />
@@ -1164,7 +1448,7 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
 
             {/* Sentiment Analysis */}
             <Card>
-              <SectionTitle>😊 Sentiment Breakdown</SectionTitle>
+              <SectionTitle>Sentiment Breakdown</SectionTitle>
               <div className="flex flex-col md:flex-row gap-4 items-center">
                 <ResponsiveContainer width="100%" height={220} minWidth={180}>
                   <PieChart>
@@ -1186,7 +1470,7 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
 
             {/* Category Analysis */}
             <Card>
-              <SectionTitle>📂 Category Breakdown (Positive vs Negative)</SectionTitle>
+              <SectionTitle>Category Breakdown</SectionTitle>
               <div>
                 {Object.entries(categorySentiment)
                   .sort((a, b) => b[1].total - a[1].total)
@@ -1204,7 +1488,7 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
           </div>
 
           {/* ── Shop Performance ────────────────────────────────────────── */}
-          <SectionTitle>🏪 Outlet Performance</SectionTitle>
+          <SectionTitle>Outlet Performance</SectionTitle>
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 mb-8">
             {rankedShops.map((shop, i) => <ShopCard key={shop.id} shop={shop} rank={i + 1} />)}
           </div>
@@ -1216,15 +1500,14 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
 
             {/* Top Issues */}
             <Card>
-              <SectionTitle>🔴 Top Issues Requiring Attention</SectionTitle>
+              <SectionTitle>Top Issues Requiring Attention</SectionTitle>
               {topIssues.length === 0
-                ? <p className="text-slate-500 text-sm">No critical issues found 🎉</p>
+                ? <p className="text-slate-500 text-sm">No critical issues found.</p>
                 : (
                   <div className="space-y-2">
                     {topIssues.map((issue, i) => (
                       <div key={i} className={`flex items-center gap-3 p-2.5 ${insetCls} rounded-lg`}>
-                        <span className="text-base">{PRIORITY_EMOJI[issue.sentiment] ?? '🟢'}</span>
-                        <span className="text-base">{CATEGORY_EMOJI[issue.category] ?? '📌'}</span>
+                        <Dot color={issue.sentiment === 'complaint' ? '#ef4444' : '#f97316'} />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-slate-800 capitalize break-words">{issue.subcategory}</p>
                           <p className="text-xs text-slate-500 capitalize">{issue.category}</p>
@@ -1241,15 +1524,14 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
 
             {/* Top Suggestions */}
             <Card>
-              <SectionTitle>💡 Top Customer Suggestions</SectionTitle>
+              <SectionTitle>Top Customer Suggestions</SectionTitle>
               {topSuggestions.length === 0
                 ? <p className="text-slate-500 text-sm">No suggestions recorded yet</p>
                 : (
                   <div className="space-y-2">
                     {topSuggestions.map((s, i) => (
                       <div key={i} className={`flex items-center gap-3 p-2.5 ${insetCls} rounded-lg`}>
-                        <span className="text-base">💡</span>
-                        <span className="text-base">{CATEGORY_EMOJI[s.category] ?? '📌'}</span>
+                        <Dot color="#6366f1" />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-slate-800 capitalize break-words">{s.subcategory}</p>
                           <p className="text-xs text-slate-500 capitalize">{s.category}</p>
@@ -1267,7 +1549,7 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
 
             {/* Monthly Trend */}
             <Card>
-              <SectionTitle>📈 Monthly Review Trend</SectionTitle>
+              <SectionTitle>Monthly Review Trend</SectionTitle>
               <ResponsiveContainer width="100%" height={260}>
                 <LineChart data={trendData} margin={{ left: 0, right: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} />
@@ -1275,15 +1557,15 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
                   <YAxis tick={{ fill: CHART_TICK, fontSize: 11 }} />
                   <Tooltip contentStyle={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 8 }}
                     labelStyle={{ color: '#0f172a' }} />
-                  <Line type="monotone" dataKey="count" stroke={DASHBOARD_ACCENT} strokeWidth={2.5}
-                    dot={{ fill: DASHBOARD_ACCENT, r: 4 }} />
+                  <Line type="monotone" dataKey="count" stroke={theme.accent} strokeWidth={2.5}
+                    dot={{ fill: theme.accent, r: 4 }} />
                 </LineChart>
               </ResponsiveContainer>
             </Card>
 
             {/* Rating Distribution */}
             <Card>
-              <SectionTitle>⭐ Rating Distribution</SectionTitle>
+              <SectionTitle>Rating Distribution</SectionTitle>
               {ratingDist.length === 0
                 ? <p className="text-slate-500 text-sm">No ratings collected yet</p>
                 : (
@@ -1297,7 +1579,7 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
               {avgRating !== null && (
                 <div className="mt-4 pt-3 border-t border-slate-200 flex items-center justify-between">
                   <span className="text-sm text-slate-500">Overall Average</span>
-                  <span className="text-lg font-bold text-yellow-400">⭐ {avgRating} / 5</span>
+                  <span className="text-lg font-bold text-yellow-500">{avgRating} / 5</span>
                 </div>
               )}
             </Card>
@@ -1306,9 +1588,10 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
           {/* ── Recent Reviews (preview, click to see all) ──────────────── */}
           <Card className="mb-8">
             <div className="flex items-center justify-between mb-4">
-              <SectionTitle>🕐 Recent Reviews</SectionTitle>
+              <SectionTitle>Recent Reviews</SectionTitle>
               <button onClick={() => setTab('reviews')}
-                className="text-xs text-blue-600 hover:underline font-semibold">
+                className="text-xs font-black hover:underline"
+                style={{ color: theme.accent }}>
                 View all →
               </button>
             </div>
@@ -1316,14 +1599,14 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
           </Card>
 
           <p className="text-center text-slate-700 text-xs mt-8">
-            📊 VoiceAgent · Customer Review Analytics · © {new Date().getFullYear()}
+            VoiceAgent · Customer Review Analytics · © {new Date().getFullYear()}
           </p>
         </>
       )}
 
       {tab === 'reviews' && (
         <Card>
-          <SectionTitle>📋 All Reviews — Follow-up Tracker</SectionTitle>
+          <SectionTitle>All Reviews — Follow-up Tracker</SectionTitle>
           <ReviewsPanel reviews={recentReviews} />
         </Card>
       )}

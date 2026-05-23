@@ -1,45 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server'
-
-// ── Hash helper — runs in Edge runtime via crypto.subtle ───────────────────────
-async function hashToken(password: string): Promise<string> {
-  const salt = process.env.SESSION_SALT ?? 'va-dashboard-2025'
-  const enc  = new TextEncoder()
-  const buf  = await crypto.subtle.digest('SHA-256', enc.encode(password + salt))
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-}
+import { verifySessionToken, AUTH_COOKIE } from '@/lib/auth/session'
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
 
-  // Allow the login page through without any auth check
-  if (pathname === '/dashboard/login') {
+  if (pathname === '/dashboard/login' || pathname === '/agent-login') {
     return NextResponse.next()
   }
 
-  // If DASHBOARD_PASSWORD is not configured, allow everything through
-  const password = process.env.DASHBOARD_PASSWORD
-  if (!password) {
-    return NextResponse.next()
+  const session = await verifySessionToken(req.cookies.get(AUTH_COOKIE)?.value)
+
+  if (pathname.startsWith('/dashboard')) {
+    if (session?.role === 'admin' || session?.role === 'manager') return NextResponse.next()
+    const loginUrl = req.nextUrl.clone()
+    loginUrl.pathname = '/dashboard/login'
+    loginUrl.search = `?from=${encodeURIComponent(pathname)}`
+    return NextResponse.redirect(loginUrl)
   }
 
-  // Validate the dashboard_auth cookie
-  const cookieValue = req.cookies.get('dashboard_auth')?.value
-  if (cookieValue) {
-    const expected = await hashToken(password)
-    if (cookieValue === expected) {
-      return NextResponse.next()
-    }
+  if (pathname === '/voice') {
+    if (session?.role === 'agent' && session.shopId) return NextResponse.next()
+    const loginUrl = req.nextUrl.clone()
+    loginUrl.pathname = '/agent-login'
+    loginUrl.search = `?from=${encodeURIComponent(pathname)}`
+    return NextResponse.redirect(loginUrl)
   }
 
-  // Not authenticated — redirect to login with the original path as `from`
-  const loginUrl = req.nextUrl.clone()
-  loginUrl.pathname = '/dashboard/login'
-  loginUrl.search   = `?from=${encodeURIComponent(pathname)}`
-  return NextResponse.redirect(loginUrl)
+  return NextResponse.next()
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*'],
+  matcher: ['/dashboard/:path*', '/voice'],
 }

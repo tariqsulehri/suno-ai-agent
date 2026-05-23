@@ -1,8 +1,12 @@
-import { isEmbedAuthEnabled, validateEmbedQuery } from '@/lib/security/embed-auth'
+import { isEmbedAuthEnabled } from '@/lib/security/embed-auth'
 import { VoiceAgentWidget } from '@/components/voice-agent/widget'
 import { NexusAgent }       from '@/components/voice-agent/nexus-agent'
 import { ThemeProvider, type ThemeColors, type VoiceThemeName } from '@/components/voice-agent/theme-provider'
 import { hexToChannels, darken, lighten } from '@/lib/utils/color'
+import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session'
+import { db } from '@/lib/db/client'
+import { cookies } from 'next/headers'
+import { redirect } from 'next/navigation'
 import type { CSSProperties } from 'react'
 
 interface VoicePageProps {
@@ -16,8 +20,6 @@ function isHex(v: unknown): v is string {
 }
 
 const THEMES: VoiceThemeName[] = ['nexus', 'daylight', 'emerald', 'ember']
-const VALID_SHOPS = ['shop1', 'shop2', 'shop3', 'shop4']
-
 function isThemeName(value: unknown): value is VoiceThemeName {
   return typeof value === 'string' && THEMES.includes(value as VoiceThemeName)
 }
@@ -35,36 +37,20 @@ function buildThemeStyle(primary: string, dk: string, lt: string, md: string): s
   )
 }
 
-function RequiredContextCard({ tenantId, shopCode }: { tenantId?: string; shopCode?: string }) {
-  const hasInvalidShop = Boolean(shopCode && !VALID_SHOPS.includes(shopCode.toLowerCase()))
-
-  return (
-    <main className="min-h-dvh flex items-center justify-center bg-surface p-6">
-      <div className="nx-shop-card max-w-md text-center">
-        <div className="nx-shop-icon">AI</div>
-        <h1 className="nx-shop-title">Agent Link Required</h1>
-        <p className="nx-shop-body">
-          {hasInvalidShop
-            ? 'This agent has not been configured for the selected shop.'
-            : 'Please open the agent with a tenant and shop code so reviews are saved to the correct branch.'}
-        </p>
-        <p className="mt-4 text-xs text-slate-400 break-all">
-          /voice?tenant=outlet-reviews&shop=shop1
-        </p>
-        {!tenantId && <p className="mt-3 text-xs text-slate-500">Missing: tenant</p>}
-        {!shopCode && <p className="mt-1 text-xs text-slate-500">Missing: shop</p>}
-      </div>
-    </main>
-  )
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default async function VoicePage({ searchParams }: VoicePageProps) {
   const params = (await searchParams) ?? {}
-  const tenantId = typeof params.tenant === 'string' ? params.tenant : undefined
-  const token    = typeof params.token  === 'string' ? params.token  : undefined
-  const shopCode = typeof params.shop   === 'string' ? params.shop   : undefined
+  const cookieStore = await cookies()
+  const session = await verifySessionToken(cookieStore.get(AUTH_COOKIE)?.value)
+  if (session?.role !== 'agent' || !session.shopId) redirect('/agent-login?from=%2Fvoice')
+
+  const shop = await db.shop.findUnique({ where: { id: session.shopId } })
+  if (!shop) redirect('/agent-login?from=%2Fvoice')
+
+  const tenantId = session.tenantId ?? 'outlet-reviews'
+  const token = undefined
+  const shopCode = shop.branchCode ?? shop.tenantId
   const modeParam = typeof params.mode === 'string' ? params.mode : undefined
   const launcherParam = typeof params.launcher === 'string' ? params.launcher : undefined
   const marginParam = typeof params.margin === 'string' ? params.margin : undefined
@@ -94,14 +80,7 @@ export default async function VoicePage({ searchParams }: VoicePageProps) {
 
   // ─────────────────────────────────────────────────────────────────────────
 
-  const auth = validateEmbedQuery(tenantId, token)
-  const validShop = Boolean(shopCode && VALID_SHOPS.includes(shopCode.toLowerCase()))
-
-  if (!tenantId || !validShop) {
-    return <RequiredContextCard tenantId={tenantId} shopCode={shopCode} />
-  }
-
-  if (isEmbedAuthEnabled() && !auth.ok) {
+  if (isEmbedAuthEnabled() && !session) {
     return (
       <main className="min-h-dvh flex items-center justify-center bg-surface p-6">
         <div className="w-full max-w-sm bg-white rounded-2xl shadow-card p-6 text-center">

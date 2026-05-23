@@ -2,6 +2,8 @@ import { NextRequest } from 'next/server'
 import { streamChatReply, extractSentences } from '@/lib/ai/chat'
 import { requireEmbedApiAuth, getTenantFromRequest } from '@/lib/security/embed-auth'
 import { db } from '@/lib/db/client'
+import { getSessionFromRequest } from '@/lib/auth/session'
+import { getTenantById } from '@/lib/tenants/registry'
 import type { ChatMessage } from '@/lib/ai/chat'
 import type { TenantConfig } from '@/lib/tenants/types'
 export { OPTIONS } from '@/lib/utils/cors'
@@ -20,12 +22,19 @@ export const dynamic = 'force-dynamic'
  *   { error: string }                                    — something went wrong
  */
 export async function POST(req: NextRequest) {
-  const authError = requireEmbedApiAuth(req)
+  const session = await getSessionFromRequest(req)
+  const sessionTenant = session?.role === 'agent' && session.tenantId
+    ? getTenantById(session.tenantId)
+    : null
+
+  const authError = sessionTenant ? null : requireEmbedApiAuth(req)
   if (authError) return authError
 
-  const tenant   = getTenantFromRequest(req)
+  const tenant   = sessionTenant ?? getTenantFromRequest(req)
   const shopCode = req.headers.get('x-embed-shop') ?? ''
-  const shop     = await resolveShopForChat(tenant, shopCode)
+  const shop     = session?.role === 'agent' && session.shopId
+    ? await db.shop.findUnique({ where: { id: session.shopId } })
+    : await resolveShopForChat(tenant, shopCode)
 
   let messages: ChatMessage[]
   try {

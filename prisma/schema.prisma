@@ -27,6 +27,20 @@ model Shop {
   lng        Float?
 
   reviews Review[]
+  users   User[]
+}
+
+// ── Application Users ─────────────────────────────────────────────────────────
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  role         String   // agent | manager | admin
+  tenantId     String?
+  shopId       String?
+  shop         Shop?    @relation(fields: [shopId], references: [id])
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
 }
 
 // ── Review Session ─────────────────────────────────────────────────────────────
@@ -49,6 +63,10 @@ model Review {
 
   // Follow-up lifecycle
   status    String   @default("pending")  // pending | contacted | resolved
+  ticketId       String?  @unique
+  ticketType     String?  // complaint | negative | suggestion
+  ticketPriority String?  // normal | high | urgent
+  slaDueAt       DateTime?
 
   createdAt DateTime @default(now())
 

@@ -3943,3 +3943,181 @@ html, body {
     font-size: 0.74rem;
   }
 }
+
+/* ── Professional region color system + ticket confirmation ─────────────── */
+.nx-header {
+  background:
+    linear-gradient(145deg, rgb(15 23 42 / 0.92), rgb(30 41 59 / 0.72)),
+    rgb(8 16 36 / 0.86);
+  border-color: rgb(148 163 184 / 0.18);
+}
+
+.nx-agent-rail {
+  background:
+    radial-gradient(ellipse at 40% 18%, rgb(20 184 166 / 0.12), transparent 40%),
+    linear-gradient(160deg, rgb(8 47 73 / 0.78), rgb(15 23 42 / 0.88));
+  border-color: rgb(45 212 191 / 0.14);
+}
+
+.nx-agent-rail .nx-agent-panel {
+  background:
+    linear-gradient(145deg, rgb(255 255 255 / 0.08), rgb(255 255 255 / 0.03)),
+    rgb(6 35 58 / 0.58);
+  border-color: rgb(45 212 191 / 0.16) !important;
+}
+
+.nx-conversation-panel {
+  background:
+    radial-gradient(ellipse at 20% 0%, rgb(99 102 241 / 0.12), transparent 38%),
+    linear-gradient(160deg, rgb(17 24 39 / 0.82), rgb(30 41 59 / 0.74));
+  border-color: rgb(129 140 248 / 0.16) !important;
+}
+
+.nx-conversation-panel .nx-transcript {
+  background:
+    radial-gradient(ellipse at 18% 0%, rgb(99 102 241 / 0.06), transparent 36%),
+    linear-gradient(180deg, rgb(255 255 255 / 0.06), rgb(255 255 255 / 0.025)),
+    rgb(15 23 42 / 0.56);
+}
+
+.nx-end-policy span {
+  background:
+    linear-gradient(145deg, rgb(20 184 166 / 0.12), rgb(99 102 241 / 0.08)),
+    rgb(15 23 42 / 0.52);
+  border-color: rgb(148 163 184 / 0.16);
+}
+
+.nx-ticket-card {
+  width: min(100%, 360px);
+  margin: 1rem auto 0;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid;
+  border-radius: 1rem;
+  background:
+    linear-gradient(145deg, rgb(255 255 255 / 0.1), rgb(255 255 255 / 0.035)),
+    rgb(2 6 23 / 0.46);
+  box-shadow: 0 16px 40px rgb(0 0 0 / 0.2), 0 1px 0 rgb(255 255 255 / 0.08) inset;
+  text-align: left;
+}
+
+.nx-ticket-label {
+  display: block;
+  color: rgb(203 213 225 / 0.74);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.nx-ticket-card strong {
+  display: block;
+  margin-top: 0.28rem;
+  font-family: var(--nx-font-mono);
+  font-size: 1.08rem;
+  letter-spacing: 0.02em;
+}
+
+.nx-ticket-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+  margin-top: 0.7rem;
+}
+
+.nx-ticket-meta span {
+  padding: 0.28rem 0.5rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.08);
+  color: rgb(226 232 240 / 0.82);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+[data-va-theme="daylight"] .nx-header {
+  background:
+    linear-gradient(145deg, rgb(255 255 255 / 0.96), rgb(236 244 255 / 0.78)),
+    rgb(255 255 255 / 0.9);
+}
+
+[data-va-theme="daylight"] .nx-agent-rail {
+  background:
+    radial-gradient(ellipse at 42% 18%, rgb(20 184 166 / 0.12), transparent 42%),
+    linear-gradient(160deg, rgb(240 253 250 / 0.9), rgb(239 246 255 / 0.82));
+}
+
+[data-va-theme="daylight"] .nx-conversation-panel {
+  background:
+    radial-gradient(ellipse at 20% 0%, rgb(99 102 241 / 0.1), transparent 38%),
+    linear-gradient(160deg, rgb(248 250 252 / 0.96), rgb(239 246 255 / 0.84));
+}
+
+[data-va-theme="daylight"] .nx-ticket-card {
+  background: rgb(255 255 255 / 0.88);
+}
+
+/* ── Dashboard readable theme overrides ─────────────────────────────────── */
+.dash-dashboard {
+  color: var(--dash-text);
+}
+
+.dash-dashboard .recharts-cartesian-grid line {
+  stroke: var(--dash-border);
+}
+
+.dash-dashboard[data-dashboard-theme="dark"] .text-slate-950,
+.dash-dashboard[data-dashboard-theme="dark"] .text-slate-900,
+.dash-dashboard[data-dashboard-theme="night"] .text-slate-950,
+.dash-dashboard[data-dashboard-theme="night"] .text-slate-900 {
+  color: var(--dash-heading) !important;
+}
+
+.dash-dashboard[data-dashboard-theme="dark"] .text-slate-800,
+.dash-dashboard[data-dashboard-theme="dark"] .text-slate-700,
+.dash-dashboard[data-dashboard-theme="dark"] .text-slate-600,
+.dash-dashboard[data-dashboard-theme="night"] .text-slate-800,
+.dash-dashboard[data-dashboard-theme="night"] .text-slate-700,
+.dash-dashboard[data-dashboard-theme="night"] .text-slate-600 {
+  color: var(--dash-text) !important;
+}
+
+.dash-dashboard[data-dashboard-theme="dark"] .text-slate-500,
+.dash-dashboard[data-dashboard-theme="dark"] .text-slate-400,
+.dash-dashboard[data-dashboard-theme="night"] .text-slate-500,
+.dash-dashboard[data-dashboard-theme="night"] .text-slate-400 {
+  color: var(--dash-muted) !important;
+}
+
+.dash-dashboard[data-dashboard-theme="dark"] .bg-white,
+.dash-dashboard[data-dashboard-theme="dark"] .bg-slate-50,
+.dash-dashboard[data-dashboard-theme="dark"] .bg-slate-100,
+.dash-dashboard[data-dashboard-theme="night"] .bg-white,
+.dash-dashboard[data-dashboard-theme="night"] .bg-slate-50,
+.dash-dashboard[data-dashboard-theme="night"] .bg-slate-100 {
+  background-color: var(--dash-inset) !important;
+}
+
+.dash-dashboard[data-dashboard-theme="dark"] .border-slate-100,
+.dash-dashboard[data-dashboard-theme="dark"] .border-slate-200,
+.dash-dashboard[data-dashboard-theme="dark"] .border-slate-300,
+.dash-dashboard[data-dashboard-theme="night"] .border-slate-100,
+.dash-dashboard[data-dashboard-theme="night"] .border-slate-200,
+.dash-dashboard[data-dashboard-theme="night"] .border-slate-300 {
+  border-color: var(--dash-border) !important;
+}
+
+.dash-dashboard[data-dashboard-theme="dark"] select,
+.dash-dashboard[data-dashboard-theme="dark"] input,
+.dash-dashboard[data-dashboard-theme="dark"] textarea,
+.dash-dashboard[data-dashboard-theme="night"] select,
+.dash-dashboard[data-dashboard-theme="night"] input,
+.dash-dashboard[data-dashboard-theme="night"] textarea {
+  color: var(--dash-text);
+  background-color: var(--dash-input);
+  border-color: var(--dash-input-border);
+}
+
+.dash-dashboard[data-dashboard-theme="dark"] .recharts-tooltip-wrapper,
+.dash-dashboard[data-dashboard-theme="night"] .recharts-tooltip-wrapper {
+  color: #0f172a;
+}

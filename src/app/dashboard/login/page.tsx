@@ -2,39 +2,19 @@
 
 import { useState, FormEvent, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 
-// ── Lock icon SVG ─────────────────────────────────────────────────────────────
-function LockIcon() {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="w-10 h-10 text-[#6c8ef7]"
-      aria-hidden="true"
-    >
-      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-    </svg>
-  )
-}
-
-// ── Inner form — uses useSearchParams so it must be wrapped in Suspense ───────
 function LoginForm() {
-  const router        = useRouter()
-  const searchParams  = useSearchParams()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError]       = useState<string | null>(null)
-  const [loading, setLoading]   = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    if (!password.trim()) return
-
+    if (!username.trim() || !password.trim()) return
     setLoading(true)
     setError(null)
 
@@ -42,16 +22,13 @@ function LoginForm() {
       const res = await fetch('/api/dashboard/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ username, password }),
       })
       const data = await res.json() as { ok?: boolean; error?: string }
-
       if (!res.ok || !data.ok) {
-        setError(data.error ?? 'Incorrect password')
+        setError(data.error ?? 'Invalid credentials')
         return
       }
-
-      // Redirect to the original destination or the main dashboard
       router.push(searchParams.get('from') ?? '/dashboard')
     } catch {
       setError('Request failed. Please try again.')
@@ -61,58 +38,55 @@ function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f1117] flex items-center justify-center p-4">
-      <div className="bg-[#1a1f2e] rounded-2xl p-8 w-full max-w-sm shadow-xl">
-        {/* Lock icon */}
-        <div className="flex justify-center mb-6">
-          <LockIcon />
-        </div>
+    <main className="min-h-screen bg-[linear-gradient(135deg,#0f172a,#111827_48%,#172033)] flex items-center justify-center p-4">
+      <section className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900/88 p-7 shadow-2xl">
+        <p className="text-xs font-black uppercase tracking-[0.22em] text-blue-300 text-center">Management Access</p>
+        <h1 className="mt-3 text-2xl font-black text-white text-center">Dashboard Login</h1>
+        <p className="mt-2 text-sm font-semibold text-slate-400 text-center">
+          Admins see all shops. Managers see only their assigned shop.
+        </p>
 
-        {/* Title */}
-        <h1 className="text-xl font-bold text-white text-center mb-6">
-          Dashboard Login
-        </h1>
-
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="mt-7 space-y-4">
+          <input
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="Username"
+            autoComplete="username"
+            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm font-semibold text-white placeholder-slate-500 outline-none transition-colors focus:border-blue-400"
+            disabled={loading}
+          />
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Enter password"
+            placeholder="Password"
             autoComplete="current-password"
-            className="w-full bg-[#131720] border border-[#2d3748] rounded-xl px-4 py-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-[#6c8ef7] transition-colors"
+            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm font-semibold text-white placeholder-slate-500 outline-none transition-colors focus:border-blue-400"
             disabled={loading}
           />
-
-          {/* Error message */}
-          {error && (
-            <p className="text-sm text-red-400">{error}</p>
-          )}
-
+          {error && <p className="text-sm font-semibold text-red-300">{error}</p>}
           <button
             type="submit"
-            disabled={loading || !password.trim()}
-            className="w-full py-2.5 bg-[#6c8ef7] hover:bg-[#5a7ef0] disabled:opacity-40 text-white text-sm font-semibold rounded-xl transition-colors"
+            disabled={loading || !username.trim() || !password.trim()}
+            className="w-full rounded-xl bg-blue-600 py-3 text-sm font-black text-white transition-colors hover:bg-blue-500 disabled:opacity-45"
           >
-            {loading ? 'Signing in…' : 'Sign In'}
+            {loading ? 'Signing in...' : 'Open Dashboard'}
           </button>
         </form>
-      </div>
-    </div>
+        <p className="mt-5 text-center text-xs font-semibold text-slate-400">
+          Shop voice station?{' '}
+          <Link href="/agent-login" className="font-black text-blue-200 underline underline-offset-4">
+            Open Agent Login
+          </Link>
+        </p>
+      </section>
+    </main>
   )
 }
 
-// ── Page — wraps form in Suspense for useSearchParams ─────────────────────────
-export default function LoginPage() {
+export default function DashboardLoginPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen bg-[#0f1117] flex items-center justify-center">
-          <div className="w-6 h-6 border-2 border-[#6c8ef7] border-t-transparent rounded-full animate-spin" />
-        </div>
-      }
-    >
+    <Suspense fallback={<main className="min-h-screen bg-slate-950" />}>
       <LoginForm />
     </Suspense>
   )

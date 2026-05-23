@@ -9,111 +9,134 @@ type ReviewRow = {
   rating:      number | null
 }
 
+export interface DashboardScope {
+  shopId?: string | null
+}
+
 function rawDb() {
   return new Database(resolveSqliteDbPath(), { readonly: true })
 }
 
-function getTrend(): { month: string; count: number }[] {
+function scopedWhere(scope: DashboardScope) {
+  return scope.shopId ? { shopId: scope.shopId } : undefined
+}
+
+function runScopedQuery<T>(sql: string, scope: DashboardScope) {
   const raw = rawDb()
   try {
-    return raw.prepare(`
-      SELECT strftime('%Y-%m', createdAt) AS month, COUNT(*) AS count
-      FROM Review
-      WHERE createdAt >= datetime('now', '-12 months')
-      GROUP BY month ORDER BY month ASC
-    `).all() as { month: string; count: number }[]
+    return scope.shopId
+      ? raw.prepare(sql).all(scope.shopId) as T[]
+      : raw.prepare(sql).all() as T[]
   } finally { raw.close() }
 }
 
-function getRatingDistribution(): { rating: number; count: number }[] {
-  const raw = rawDb()
-  try {
-    return raw.prepare(`
-      SELECT rating, COUNT(*) AS count
-      FROM Review
-      WHERE rating IS NOT NULL
-      GROUP BY rating ORDER BY rating DESC
-    `).all() as { rating: number; count: number }[]
-  } finally { raw.close() }
+function getTrend(scope: DashboardScope): { month: string; count: number }[] {
+  const shopFilter = scope.shopId ? 'AND shopId = ?' : ''
+  return runScopedQuery<{ month: string; count: number }>(`
+    SELECT strftime('%Y-%m', createdAt) AS month, COUNT(*) AS count
+    FROM Review
+    WHERE createdAt >= datetime('now', '-12 months')
+      ${shopFilter}
+    GROUP BY month ORDER BY month ASC
+  `, scope)
 }
 
-function getTopIssues(): { subcategory: string; category: string; sentiment: string; count: number }[] {
-  const raw = rawDb()
-  try {
-    return raw.prepare(`
-      SELECT subcategory, category, sentiment, COUNT(*) AS count
-      FROM Review
-      WHERE subcategory IS NOT NULL
-        AND sentiment IN ('negative','complaint')
-      GROUP BY subcategory, category, sentiment
-      ORDER BY count DESC
-      LIMIT 8
-    `).all() as { subcategory: string; category: string; sentiment: string; count: number }[]
-  } finally { raw.close() }
+function getRatingDistribution(scope: DashboardScope): { rating: number; count: number }[] {
+  const shopFilter = scope.shopId ? 'AND shopId = ?' : ''
+  return runScopedQuery<{ rating: number; count: number }>(`
+    SELECT rating, COUNT(*) AS count
+    FROM Review
+    WHERE rating IS NOT NULL
+      ${shopFilter}
+    GROUP BY rating ORDER BY rating DESC
+  `, scope)
 }
 
-function getTopSuggestions(): { subcategory: string; category: string; count: number }[] {
-  const raw = rawDb()
-  try {
-    return raw.prepare(`
-      SELECT subcategory, category, COUNT(*) AS count
-      FROM Review
-      WHERE subcategory IS NOT NULL
-        AND sentiment = 'suggestion'
-      GROUP BY subcategory, category
-      ORDER BY count DESC
-      LIMIT 6
-    `).all() as { subcategory: string; category: string; count: number }[]
-  } finally { raw.close() }
+function getTopIssues(scope: DashboardScope): { subcategory: string; category: string; sentiment: string; count: number }[] {
+  const shopFilter = scope.shopId ? 'AND shopId = ?' : ''
+  return runScopedQuery<{ subcategory: string; category: string; sentiment: string; count: number }>(`
+    SELECT subcategory, category, sentiment, COUNT(*) AS count
+    FROM Review
+    WHERE subcategory IS NOT NULL
+      AND sentiment IN ('negative','complaint')
+      ${shopFilter}
+    GROUP BY subcategory, category, sentiment
+    ORDER BY count DESC
+    LIMIT 8
+  `, scope)
 }
 
-function getRecentReviews(): {
+function getTopSuggestions(scope: DashboardScope): { subcategory: string; category: string; count: number }[] {
+  const shopFilter = scope.shopId ? 'AND shopId = ?' : ''
+  return runScopedQuery<{ subcategory: string; category: string; count: number }>(`
+    SELECT subcategory, category, COUNT(*) AS count
+    FROM Review
+    WHERE subcategory IS NOT NULL
+      AND sentiment = 'suggestion'
+      ${shopFilter}
+    GROUP BY subcategory, category
+    ORDER BY count DESC
+    LIMIT 6
+  `, scope)
+}
+
+function getRecentReviews(scope: DashboardScope): {
   id: string; shopName: string; sentiment: string | null; category: string | null
   subcategory: string | null; rating: number | null; summary: string | null
   keyPoints: string | null; transcript: string | null; status: string
+  ticketId: string | null; ticketType: string | null; ticketPriority: string | null; slaDueAt: string | null
   leadId: string | null; leadName: string | null; leadPhone: string | null; leadEmail: string | null
   createdAt: string
 }[] {
-  const raw = rawDb()
-  try {
-    return raw.prepare(`
-      SELECT r.id, s.name AS shopName, r.sentiment, r.category,
-             r.subcategory, r.rating, r.summary, r.keyPoints, r.transcript,
-             r.status, r.createdAt,
-             l.id AS leadId, l.name AS leadName, l.phone AS leadPhone, l.email AS leadEmail
-      FROM Review r
-      JOIN Shop s ON r.shopId = s.id
-      LEFT JOIN Lead l ON l.reviewId = r.id
-      ORDER BY r.createdAt DESC
-      LIMIT 200
-    `).all() as {
-      id: string; shopName: string; sentiment: string | null; category: string | null
-      subcategory: string | null; rating: number | null; summary: string | null
-      keyPoints: string | null; transcript: string | null; status: string
-      leadId: string | null; leadName: string | null; leadPhone: string | null; leadEmail: string | null
-      createdAt: string
-    }[]
-  } finally { raw.close() }
+  const shopFilter = scope.shopId ? 'WHERE r.shopId = ?' : ''
+  return runScopedQuery<{
+    id: string; shopName: string; sentiment: string | null; category: string | null
+    subcategory: string | null; rating: number | null; summary: string | null
+    keyPoints: string | null; transcript: string | null; status: string
+    ticketId: string | null; ticketType: string | null; ticketPriority: string | null; slaDueAt: string | null
+    leadId: string | null; leadName: string | null; leadPhone: string | null; leadEmail: string | null
+    createdAt: string
+  }>(`
+    SELECT r.id, s.name AS shopName, r.sentiment, r.category,
+           r.subcategory, r.rating, r.summary, r.keyPoints, r.transcript,
+           r.status, r.ticketId, r.ticketType, r.ticketPriority, r.slaDueAt, r.createdAt,
+           l.id AS leadId, l.name AS leadName, l.phone AS leadPhone, l.email AS leadEmail
+    FROM Review r
+    JOIN Shop s ON r.shopId = s.id
+    LEFT JOIN Lead l ON l.reviewId = r.id
+    ${shopFilter}
+    ORDER BY r.createdAt DESC
+    LIMIT 200
+  `, scope)
 }
 
-export async function getDashboardData() {
+export async function getDashboardData(scope: DashboardScope = {}) {
+  const reviewWhere = scopedWhere(scope)
+  const shopWhere = scope.shopId ? { id: scope.shopId } : undefined
+
   const [bysentimentRaw, bycategoryRaw, avgRatingRaw, shops, allReviews] = await Promise.all([
-    db.review.groupBy({ by: ['sentiment'], _count: { sentiment: true } }),
-    db.review.groupBy({ by: ['category'],  _count: { category: true }, orderBy: { _count: { category: 'desc' } } }),
-    db.review.aggregate({ _avg: { rating: true } }),
+    db.review.groupBy({ by: ['sentiment'], where: reviewWhere, _count: { sentiment: true } }),
+    db.review.groupBy({
+      by: ['category'],
+      where: reviewWhere,
+      _count: { category: true },
+      orderBy: { _count: { category: 'desc' } },
+    }),
+    db.review.aggregate({ where: reviewWhere, _avg: { rating: true } }),
     db.shop.findMany({
+      where: shopWhere,
       include: {
         reviews: { select: { sentiment: true, category: true, subcategory: true, rating: true } },
       },
     }),
-    db.review.count(),
+    db.review.count({ where: reviewWhere }),
   ])
 
-  const recentTrend   = getTrend()
-  const ratingDist    = getRatingDistribution()
-  const topIssues     = getTopIssues()
-  const topSuggestions = getTopSuggestions()
-  const recentReviews = getRecentReviews()
+  const recentTrend    = getTrend(scope)
+  const ratingDist     = getRatingDistribution(scope)
+  const topIssues      = getTopIssues(scope)
+  const topSuggestions = getTopSuggestions(scope)
+  const recentReviews  = getRecentReviews(scope)
 
   // ── Per-shop stats ──────────────────────────────────────────────────────────
   const shopStats = shops.map((shop) => {

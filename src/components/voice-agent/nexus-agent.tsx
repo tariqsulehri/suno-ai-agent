@@ -300,6 +300,7 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
   const spokenTurns = transcript.filter((m) => m.role === 'user').length
   const hasCustomerTurn = spokenTurns > 0
   const branchLabel = shopCode ? shopCode.toUpperCase() : 'Global'
+  const ticket = callSummary?.ticket ?? null
   const handleManualEnd = useCallback(() => {
     if (hasCustomerTurn || isRecording || phase !== 'idle') {
       endCall()
@@ -378,18 +379,33 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
             </p>
 
             {reviewData.sentiment !== 'positive' && (
-              <p className="nx-conf-sub">The responsible team has the conversation context.</p>
+              <p className="nx-conf-sub">
+                {ticket
+                  ? 'The responsible team has the ticket, transcript, and contact context.'
+                  : 'The responsible team has the conversation context.'}
+              </p>
+            )}
+
+            {ticket && (
+              <div className="nx-ticket-card" style={{ borderColor: color + '36' }}>
+                <span className="nx-ticket-label">Ticket ID</span>
+                <strong style={{ color }}>{ticket.id}</strong>
+                <div className="nx-ticket-meta">
+                  <span>{ticket.type}</span>
+                  <span>{ticket.priority} priority</span>
+                </div>
+              </div>
             )}
 
             <div className="nx-route-list">
               <span>Transcript secured</span>
               <span>Insight classified</span>
-              <span>{reviewData.sentiment === 'positive' ? 'Experience logged' : 'Team routing prepared'}</span>
+              <span>{ticket ? 'Ticket created' : reviewData.sentiment === 'positive' ? 'Experience logged' : 'Team routing prepared'}</span>
             </div>
 
             <div className="nx-ref-code">
-              <span>Reference</span>
-              <strong>{sessionRef.current}</strong>
+              <span>{ticket ? 'Session reference' : 'Reference'}</span>
+              <strong>{ticket?.id ?? sessionRef.current}</strong>
             </div>
 
             {reviewData.sentiment !== 'positive' && (leadData.name || leadData.phone) && (

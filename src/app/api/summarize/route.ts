@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getLLMClient, SUMMARY_MODEL, getProvider } from '@/lib/ai/client'
+import { getLLMClient, SUMMARY_MODEL } from '@/lib/ai/client'
 import { requireEmbedApiAuth, getTenantFromRequest } from '@/lib/security/embed-auth'
 import { sendCallSummaryEmail } from '@/lib/email/call-summary'
 import { sendEscalationAlert } from '@/lib/email/escalation'
@@ -78,8 +78,7 @@ Return only valid JSON: { "summary": "...", "keyPoints": ["...", "..."] }`
 
 Return only valid JSON: { "summary": "...", "keyPoints": ["...", "..."] }`
 
-  const openai   = getLLMClient(tenant.openaiApiKey)
-  const provider = getProvider()
+  const openai = getLLMClient(tenant.openaiApiKey)
 
   // Fallback used when LLM summarization fails — still saves the raw review data
   const fallbackSummary: CallSummary = {
@@ -94,7 +93,7 @@ Return only valid JSON: { "summary": "...", "keyPoints": ["...", "..."] }`
 
   try {
     const completion = await openai.chat.completions.create({
-      model:           SUMMARY_MODEL[provider],
+      model:           SUMMARY_MODEL,
       max_tokens:      500,
       temperature:     0.3,
       response_format: { type: 'json_object' },

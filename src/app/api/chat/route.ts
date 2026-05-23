@@ -157,9 +157,13 @@ export async function POST(req: NextRequest) {
         emitFinal()
       } catch (err) {
         console.error('[chat]', err)
-        const msg = String(err).includes('429')
-          ? 'OpenAI quota exceeded — please add credits at platform.openai.com'
-          : 'Chat failed — please try again'
+        const message = String(err)
+        const isInvalidProviderKey = message.includes('401') || message.toLowerCase().includes('invalid api key')
+        const msg = isInvalidProviderKey
+          ? 'AI provider API key is invalid'
+          : message.includes('429')
+            ? 'AI provider quota exceeded'
+            : 'Chat failed — please try again'
         controller.enqueue(send({ error: msg }))
         controller.close()
       }

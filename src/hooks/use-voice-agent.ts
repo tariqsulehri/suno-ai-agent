@@ -186,6 +186,7 @@ export function useVoiceAgent({
   const apiPlayer = useAudioPlayer({
     requestHeaders: embedHeaders,
     onPlaybackEnd,
+    onPlaybackError: (message) => dispatch({ type: 'ERROR', message }),
   })
 
   // ── TTS: Browser SpeechSynthesis (free, no API) ───────────────────────────────
@@ -368,10 +369,11 @@ export function useVoiceAgent({
         signal: networkAbortRef.current.signal,
       })
       const data = await res.json()
+      if (!res.ok) throw new Error(String(data?.error ?? 'Transcription failed'))
       userText   = data.text ?? ''
     } catch (err) {
       if ((err as Error).name === 'AbortError') return
-      dispatch({ type: 'ERROR', message: 'Transcription failed. Please try again.' })
+      dispatch({ type: 'ERROR', message: String((err as Error).message || 'Transcription failed. Please try again.') })
       return
     }
     if (!userText.trim()) {

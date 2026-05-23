@@ -6,6 +6,7 @@ interface UseAudioPlayerOptions {
   requestHeaders?: Record<string, string>
   onPlaybackStart?: () => void
   onPlaybackEnd?:   () => void
+  onPlaybackError?: (message: string) => void
 }
 
 interface UseAudioPlayerReturn {
@@ -30,6 +31,7 @@ export function useAudioPlayer({
   requestHeaders,
   onPlaybackStart,
   onPlaybackEnd,
+  onPlaybackError,
 }: UseAudioPlayerOptions): UseAudioPlayerReturn {
   const [isPlaying, setIsPlaying] = useState(false)
 
@@ -39,7 +41,9 @@ export function useAudioPlayer({
   const abortRef      = useRef(false)
   const fetchCtrlRef  = useRef(new AbortController())
   const requestHeadersRef = useRef<Record<string, string>>(requestHeaders ?? {})
+  const onPlaybackErrorRef = useRef(onPlaybackError)
   requestHeadersRef.current = requestHeaders ?? {}
+  onPlaybackErrorRef.current = onPlaybackError
 
   const fetchBlob = useCallback(async (text: string): Promise<Blob | null> => {
     const ctrl = new AbortController()
@@ -51,7 +55,15 @@ export function useAudioPlayer({
         body:    JSON.stringify({ text }),
         signal:  ctrl.signal,
       })
-      if (!res.ok || ctrl.signal.aborted) return null
+      if (!res.ok || ctrl.signal.aborted) {
+        let message = `Speech playback failed (${res.status})`
+        try {
+          const data = await res.json()
+          if (typeof data?.error === 'string') message = data.error
+        } catch {}
+        onPlaybackErrorRef.current?.(message)
+        return null
+      }
       return await res.blob()
     } catch {
       return null

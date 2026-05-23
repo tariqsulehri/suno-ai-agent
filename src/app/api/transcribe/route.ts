@@ -35,10 +35,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ text })
   } catch (err) {
     console.error('[transcribe]', err)
-    const isMissingProvider = String(err).includes('OPENAI_API_KEY')
+    const message = String(err)
+    const isMissingProvider = message.includes('OPENAI_API_KEY')
+    const isInvalidProviderKey = message.includes('401') || message.toLowerCase().includes('invalid api key')
     return NextResponse.json(
-      { error: isMissingProvider ? 'Transcription provider is not configured' : 'Transcription failed' },
-      { status: isMissingProvider ? 503 : 500 }
+      {
+        error: isInvalidProviderKey
+          ? 'Transcription provider API key is invalid'
+          : isMissingProvider
+            ? 'Transcription provider is not configured'
+            : 'Transcription failed',
+      },
+      { status: isMissingProvider || isInvalidProviderKey ? 503 : 500 }
     )
   }
 }

@@ -1,9 +1,8 @@
 import { z } from 'zod'
 
 const envSchema = z.object({
-  // ── LLM providers — set ONE (Groq is free; OpenAI requires credits) ──────────
+  // ── OpenAI — required for chat, speech synthesis, and transcription ─────────
   OPENAI_API_KEY: z.string().optional(),
-  GROQ_API_KEY:   z.string().optional(),
 
   // ── ElevenLabs TTS — only needed when a tenant uses ttsProvider: "elevenlabs" ─
   ELEVENLABS_API_KEY:  z.string().optional(),
@@ -32,11 +31,11 @@ function validateEnv(): Env {
 export const env = validateEnv()
 
 export function hasLLMProvider(config: Env = env): boolean {
-  return Boolean(config.OPENAI_API_KEY || config.GROQ_API_KEY)
+  return Boolean(config.OPENAI_API_KEY)
 }
 
 export function requireLLMProvider(config: Env = env): void {
   if (!hasLLMProvider(config)) {
-    throw new Error('Set either OPENAI_API_KEY or GROQ_API_KEY before using AI routes')
+    throw new Error('Set OPENAI_API_KEY before using AI routes')
   }
 }

@@ -1,4 +1,4 @@
-import { getLLMClient, CHAT_MODEL, getProvider } from './client'
+import { getLLMClient, CHAT_MODEL } from './client'
 import { buildSystemPrompt } from '@/lib/config/prompt'
 import { detectLanguage } from '@/lib/utils/detect-language'
 import type { TenantConfig } from '@/lib/tenants/types'
@@ -16,8 +16,7 @@ export async function streamChatReply(
   tenant: TenantConfig,
   shop?: ShopInfo
 ) {
-  const client   = getLLMClient()
-  const provider = getProvider()
+  const client = getLLMClient()
 
   const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')
   const detectedLanguage = lastUserMsg
@@ -27,7 +26,7 @@ export async function streamChatReply(
   const systemPrompt = buildSystemPrompt(tenant, detectedLanguage, shop)
 
   return client.chat.completions.create({
-    model:       CHAT_MODEL[provider],
+    model:       CHAT_MODEL,
     max_tokens:  280,   // 2 visible sentences (~80 tokens) + hidden tokens (~180 tokens)
     temperature: 0.5,   // lower = more consistent, less rambling
     stream:      true,

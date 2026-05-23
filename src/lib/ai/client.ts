@@ -1,15 +1,13 @@
 import OpenAI from 'openai'
 import { env, requireLLMProvider } from '@/lib/config/env'
 
-// ── OpenAI model configuration ────────────────────────────────────────────────
 // The MVP uses OpenAI explicitly for chat, summaries, speech, transcription,
 // and embeddings. No alternate OpenAI-compatible provider is selected from env.
-
 export const CHAT_MODEL = 'gpt-4o-mini'
 export const SUMMARY_MODEL = 'gpt-4o-mini'
 
-// ── Singleton client ──────────────────────────────────────────────────────────
 let _client: OpenAI | null = null
+let _openaiClient: OpenAI | null = null
 
 export function getLLMClient(apiKey?: string): OpenAI {
   if (apiKey) return new OpenAI({ apiKey })
@@ -20,5 +18,15 @@ export function getLLMClient(apiKey?: string): OpenAI {
   return _client
 }
 
-// Keep old name as alias so other files don't need changes yet
-export const getOpenAIClient = getLLMClient
+export function getOpenAIClient(apiKey?: string): OpenAI {
+  const resolvedApiKey = apiKey || env.OPENAI_API_KEY
+  if (!resolvedApiKey) {
+    throw new Error('OPENAI_API_KEY is required before using OpenAI routes')
+  }
+
+  if (apiKey) return new OpenAI({ apiKey })
+  if (!_openaiClient) {
+    _openaiClient = new OpenAI({ apiKey: resolvedApiKey })
+  }
+  return _openaiClient
+}

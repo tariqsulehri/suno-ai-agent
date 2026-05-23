@@ -93,7 +93,7 @@ export function NexusAgent(props: Props) {
 const VALID_SHOPS = ['shop1', 'shop2', 'shop3', 'shop4']
 
 function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onReset: () => void }) {
-  const validShop = !shopCode || VALID_SHOPS.includes(shopCode.toLowerCase())
+  const validShop = Boolean(shopCode && VALID_SHOPS.includes(shopCode.toLowerCase()))
 
   const {
     phase, transcript, partialReply, error,
@@ -300,6 +300,7 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
   const spokenTurns = transcript.filter((m) => m.role === 'user').length
   const hasCustomerTurn = spokenTurns > 0
   const branchLabel = shopCode ? shopCode.toUpperCase() : 'Global'
+  const ticket = callSummary?.ticket ?? null
   const handleManualEnd = useCallback(() => {
     if (hasCustomerTurn || isRecording || phase !== 'idle') {
       endCall()
@@ -378,18 +379,33 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
             </p>
 
             {reviewData.sentiment !== 'positive' && (
-              <p className="nx-conf-sub">The responsible team has the conversation context.</p>
+              <p className="nx-conf-sub">
+                {ticket
+                  ? 'The responsible team has the ticket, transcript, and contact context.'
+                  : 'The responsible team has the conversation context.'}
+              </p>
+            )}
+
+            {ticket && (
+              <div className="nx-ticket-card" style={{ borderColor: color + '36' }}>
+                <span className="nx-ticket-label">Ticket ID</span>
+                <strong style={{ color }}>{ticket.id}</strong>
+                <div className="nx-ticket-meta">
+                  <span>{ticket.type}</span>
+                  <span>{ticket.priority} priority</span>
+                </div>
+              </div>
             )}
 
             <div className="nx-route-list">
               <span>Transcript secured</span>
               <span>Insight classified</span>
-              <span>{reviewData.sentiment === 'positive' ? 'Experience logged' : 'Team routing prepared'}</span>
+              <span>{ticket ? 'Ticket created' : reviewData.sentiment === 'positive' ? 'Experience logged' : 'Team routing prepared'}</span>
             </div>
 
             <div className="nx-ref-code">
-              <span>Reference</span>
-              <strong>{sessionRef.current}</strong>
+              <span>{ticket ? 'Session reference' : 'Reference'}</span>
+              <strong>{ticket?.id ?? sessionRef.current}</strong>
             </div>
 
             {reviewData.sentiment !== 'positive' && (leadData.name || leadData.phone) && (
@@ -479,14 +495,6 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
                     <h1>{agentName || 'Review Agent'}</h1>
                     <p>{branchLabel} secure voice session</p>
                   </div>
-                  <button className="nx-rail-end-btn" onClick={handleManualEnd} aria-label="End call">
-                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none"
-                         stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.08 4.18 2 2 0 0 1 4.06 2h3a2 2 0 0 1 2 1.72c.13.95.35 1.88.66 2.76a2 2 0 0 1-.45 2.11L8 9.86a16 16 0 0 0 6.14 6.14l1.27-1.27a2 2 0 0 1 2.11-.45c.88.31 1.81.53 2.76.66A2 2 0 0 1 22 16.92z" />
-                      <path d="m2 2 20 20" />
-                    </svg>
-                    <span>End</span>
-                  </button>
                 </div>
                 <div className="nx-agent-metrics">
                   <span>

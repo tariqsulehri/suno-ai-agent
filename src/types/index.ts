@@ -31,6 +31,12 @@ export interface CallSummary {
   summary:    string
   keyPoints:  string[]
   review?:    ReviewData
+  ticket?: {
+    id:       string
+    type:     string
+    priority: string
+    slaDueAt: string
+  } | null
   email?: {
     sent:        boolean
     recipients?: string[]

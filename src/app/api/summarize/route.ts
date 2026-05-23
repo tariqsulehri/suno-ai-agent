@@ -1,21 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getLLMClient, SUMMARY_MODEL } from '@/lib/ai/client'
 import { requireEmbedApiAuth, getTenantFromRequest } from '@/lib/security/embed-auth'
+import { getSessionFromRequest } from '@/lib/auth/session'
 import { sendCallSummaryEmail } from '@/lib/email/call-summary'
 import { sendEscalationAlert } from '@/lib/email/escalation'
 import { db } from '@/lib/db/client'
 import { initVectorTable, upsertReviewVector } from '@/lib/db/vectors'
 import { embedReview } from '@/lib/ai/embed'
+import { getTenantById } from '@/lib/tenants/registry'
 import type { CallSummary, ChatHistory, LeadData, ReviewData } from '@/types'
 export { OPTIONS } from '@/lib/utils/cors'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
-  const authError = requireEmbedApiAuth(req)
+  const session = await getSessionFromRequest(req)
+  const sessionTenant = session?.role === 'agent' && session.tenantId
+    ? getTenantById(session.tenantId)
+    : null
+
+  const authError = sessionTenant ? null : requireEmbedApiAuth(req)
   if (authError) return authError
 
-  const tenant = getTenantFromRequest(req)
+  const tenant = sessionTenant ?? getTenantFromRequest(req)
 
   let messages: ChatHistory
   let lead:   LeadData   = { name: null, email: null, phone: null, company: null, purpose: null }
@@ -32,7 +39,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
 
-  const shopCode   = req.headers.get('x-embed-shop') ?? ''
+  const shopCode = req.headers.get('x-embed-shop') ?? ''
+  const shopId = session?.role === 'agent' ? session.shopId : null
   const conversation = messages.filter((m) => m.content !== '__GREET__')
 
   // quick=true: positive feedback — save to DB but skip LLM + email (no follow-up needed)
@@ -44,8 +52,8 @@ export async function POST(req: NextRequest) {
       keyPoints: [],
       ...(review ? { review } : {}),
     }
-    await persistReview({ tenant, lead, review, summary: quickSummary, messages, shopCode })
-    return NextResponse.json({ ...quickSummary, email: null })
+    const ticket = await persistReview({ tenant, lead, review, summary: quickSummary, messages, shopCode, shopId })
+    return NextResponse.json({ ...quickSummary, ticket, email: null })
   }
 
   if (conversation.length < 1) {
@@ -55,8 +63,8 @@ export async function POST(req: NextRequest) {
       ...(review ? { review } : {}),
     }
     const email = await sendCallSummaryEmail({ tenant, lead, summary: briefSummary, messages })
-    await persistReview({ tenant, lead, review, summary: briefSummary, messages, shopCode })
-    return NextResponse.json({ ...briefSummary, email })
+    const ticket = await persistReview({ tenant, lead, review, summary: briefSummary, messages, shopCode, shopId })
+    return NextResponse.json({ ...briefSummary, ticket, email })
   }
 
   const agentLabel = tenant.agentName
@@ -116,15 +124,39 @@ Return only valid JSON: { "summary": "...", "keyPoints": ["...", "..."] }`
   }
 
   // Always persist and email regardless of whether LLM succeeded
-  const [email] = await Promise.all([
-    sendCallSummaryEmail({ tenant, lead, summary, messages }),
-    persistReview({ tenant, lead, review, summary, messages, shopCode }),
-  ])
+  const email = await sendCallSummaryEmail({ tenant, lead, summary, messages })
+  const ticket = await persistReview({ tenant, lead, review, summary, messages, shopCode, shopId })
 
-  return NextResponse.json({ ...summary, email })
+  return NextResponse.json({ ...summary, ticket, email })
 }
 
 // ── Persist to SQLite + embed vector ──────────────────────────────────────────
+
+function classifyTicket(review: ReviewData | null) {
+  const sentiment = review?.sentiment
+  if (sentiment !== 'complaint' && sentiment !== 'negative' && sentiment !== 'suggestion') return null
+
+  const urgentCategory = review?.category === 'facility' || review?.category === 'behavioral'
+  const urgentText = `${review?.subcategory ?? ''} ${(review?.items ?? []).join(' ')}`.toLowerCase()
+  const urgentTerms = ['hygiene', 'dirty', 'unsafe', 'harassment', 'injury', 'poison', 'refund', 'manager', 'rude']
+
+  const urgent = sentiment === 'complaint' && (
+    review?.rating === 1 ||
+    urgentCategory ||
+    urgentTerms.some((term) => urgentText.includes(term))
+  )
+  const priority = urgent ? 'urgent' : sentiment === 'complaint' || review?.rating === 2 ? 'high' : 'normal'
+  const prefix = sentiment === 'suggestion' ? 'SUG' : sentiment === 'negative' ? 'NEG' : 'CMP'
+  const dueHours = priority === 'urgent' ? 4 : priority === 'high' ? 24 : 72
+  const slaDueAt = new Date(Date.now() + dueHours * 60 * 60 * 1000)
+
+  return {
+    id: `${prefix}-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-6)}`,
+    type: sentiment,
+    priority,
+    slaDueAt,
+  }
+}
 
 async function persistReview({
   tenant,
@@ -133,6 +165,7 @@ async function persistReview({
   summary,
   messages,
   shopCode,
+  shopId,
 }: {
   tenant:    ReturnType<typeof getTenantFromRequest>
   lead:      LeadData
@@ -140,13 +173,18 @@ async function persistReview({
   summary:   CallSummary
   messages:  ChatHistory
   shopCode:  string
-}) {
+  shopId:    string | null
+}): Promise<CallSummary['ticket']> {
   try {
-    if (tenant.agentType !== 'reviews' && tenant.agentType !== 'complaints') return
+    if (tenant.agentType !== 'reviews' && tenant.agentType !== 'complaints') return null
 
     initVectorTable()
 
-    const shop = await resolveReviewShop(tenant, shopCode)
+    const shop = shopId
+      ? await db.shop.findUnique({ where: { id: shopId } })
+      : await resolveReviewShop(tenant, shopCode)
+    if (!shop) throw new Error('Authenticated shop not found')
+    const ticket = classifyTicket(review)
 
     // Save structured review row
     const created = await db.review.create({
@@ -160,6 +198,10 @@ async function persistReview({
         summary:     summary.summary,
         keyPoints:   JSON.stringify(summary.keyPoints),
         transcript:  JSON.stringify(messages),
+        ticketId:       ticket?.id ?? null,
+        ticketType:     ticket?.type ?? null,
+        ticketPriority: ticket?.priority ?? null,
+        slaDueAt:       ticket?.slaDueAt ?? null,
       },
     })
 
@@ -194,9 +236,10 @@ async function persistReview({
       }).catch((err) => console.error('[escalation]', err))
     }
 
+    return ticket ? { ...ticket, slaDueAt: ticket.slaDueAt.toISOString() } : null
   } catch (err) {
     console.error('[persist-review]', err)
-    throw err
+    return null
   }
 }
 

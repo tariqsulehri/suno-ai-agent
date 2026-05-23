@@ -4,6 +4,7 @@ import { initVectorTable, searchSimilarReviews } from '@/lib/db/vectors'
 import { embedQuery } from '@/lib/ai/embed'
 import { getOpenAIClient } from '@/lib/ai/client'
 import { env } from '@/lib/config/env'
+import { getSessionFromRequest } from '@/lib/auth/session'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,6 +20,11 @@ export const dynamic = 'force-dynamic'
  * Returns: { answer: string, sources: Review[] }
  */
 export async function POST(req: NextRequest) {
+  const session = await getSessionFromRequest(req)
+  if (!session || (session.role !== 'admin' && session.role !== 'manager')) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   let query: string
   let limit: number
 
@@ -38,7 +44,8 @@ export async function POST(req: NextRequest) {
     const queryVec = await embedQuery(query)
 
     // Vector similarity search → top review IDs
-    const hits = searchSimilarReviews(queryVec, limit)
+    const candidateLimit = session.role === 'manager' ? Math.min(limit * 5, 50) : limit
+    const hits = searchSimilarReviews(queryVec, candidateLimit)
     if (hits.length === 0) {
       return NextResponse.json({
         answer:  'No reviews found matching your question.',
@@ -50,10 +57,21 @@ export async function POST(req: NextRequest) {
 
     // Fetch full rows for context
     const reviews = await db.review.findMany({
-      where:   { id: { in: reviewIds } },
+      where:   {
+        id: { in: reviewIds },
+        ...(session.role === 'manager' && session.shopId ? { shopId: session.shopId } : {}),
+      },
       include: { shop: true, lead: true },
       orderBy: { createdAt: 'desc' },
+      take:    limit,
     })
+
+    if (reviews.length === 0) {
+      return NextResponse.json({
+        answer:  'No reviews found matching your shop access.',
+        sources: [],
+      })
+    }
 
     // Build context for GPT
     const context = reviews.map((r, i) => {

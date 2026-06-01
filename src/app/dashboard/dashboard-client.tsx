@@ -583,6 +583,7 @@ function TranscriptModal({
 }) {
   const [status,    setStatus]    = useState(review.status)
   const [saving,    setSaving]    = useState(false)
+  const [saveErr,   setSaveErr]   = useState<string | null>(null)
   const [editLead,  setEditLead]  = useState(false)
   const [lead,      setLead]      = useState({
     name:  review.leadName,
@@ -592,14 +593,22 @@ function TranscriptModal({
 
   async function cycleStatus() {
     const next = STATUS_META[status]?.next ?? 'pending'
-    setSaving(true)
+    setSaving(true); setSaveErr(null)
     try {
       const res = await fetch(`/api/reviews/${review.id}`, {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ status: next }),
       })
-      if (res.ok) { setStatus(next); onStatusChange(review.id, next) }
+      if (res.ok) {
+        setStatus(next)
+        onStatusChange(review.id, next)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setSaveErr(data?.error ?? `Failed (${res.status})`)
+      }
+    } catch {
+      setSaveErr('Network error — please retry')
     } finally { setSaving(false) }
   }
 
@@ -704,6 +713,9 @@ function TranscriptModal({
               <div className={`flex-1 ${insetCls} rounded-xl p-4 flex flex-col gap-3`}>
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Follow-up Status</p>
                 <StatusBadge status={status} />
+                {saveErr && (
+                  <p className="text-xs text-red-500 font-semibold">{saveErr}</p>
+                )}
                 <button onClick={cycleStatus} disabled={saving}
                   className="mt-auto px-3 py-2 text-xs font-semibold rounded-lg bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-40 transition-colors">
                   {saving ? 'Saving…' : STATUS_META[status]?.nextLabel ?? 'Update'}
@@ -1363,6 +1375,12 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
               <span className="hidden h-1 w-1 rounded-full bg-[var(--dash-border)] sm:block" />
               <span>SQLite demo data</span>
             </div>
+            <button
+              onClick={() => router.refresh()}
+              className="w-fit rounded-full border border-[var(--dash-border)] bg-[var(--dash-input)] px-3 py-1.5 text-xs font-black text-[var(--dash-muted)] transition-colors hover:border-blue-300 hover:text-blue-500"
+            >
+              ↻ Refresh
+            </button>
             <button
               onClick={async () => {
                 await fetch('/api/dashboard/auth', { method: 'DELETE' })

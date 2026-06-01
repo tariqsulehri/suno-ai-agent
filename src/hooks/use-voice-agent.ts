@@ -253,13 +253,15 @@ export function useVoiceAgent({
           const isPositive = reviewRef.current.sentiment === 'positive'
           historyRef.current.push({ role: 'assistant', content: fullText })
 
+          // Transition to 'ended' immediately so the UI closes the listening/speaking
+          // state before the summarize API call (which can take 5-15 s) runs.
+          dispatchFn?.({ type: 'REPLY_COMPLETE', fullText, endCall })
+
           if (endCall) {
             // Positive: save to DB but skip LLM summarization (no follow-up needed)
             // Others:   full LLM summary + email + DB persist
             await saveCallSummary(dispatchFn, isPositive)
           }
-
-          dispatchFn?.({ type: 'REPLY_COMPLETE', fullText, endCall })
 
           if (outputModeRef.current === 'text' && !endCall) {
             dispatchFn?.({ type: 'SPEAKING_DONE' })

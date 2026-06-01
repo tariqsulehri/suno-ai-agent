@@ -90,10 +90,10 @@ export function NexusAgent(props: Props) {
 }
 
 // ── Inner component ────────────────────────────────────────────────────────────
-const VALID_SHOPS = ['shop1', 'shop2', 'shop3', 'shop4']
-
 function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onReset: () => void }) {
-  const validShop = Boolean(shopCode && VALID_SHOPS.includes(shopCode.toLowerCase()))
+  // Shop validation is handled server-side (resolveReviewShop in /api/summarize).
+  // A missing shopCode is the only case where we block the UI.
+  const validShop = Boolean(shopCode)
 
   const {
     phase, transcript, partialReply, error,
@@ -162,6 +162,9 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
   // Session countdown — hard cap for the full interaction.
   // Resets only when phase returns to 'connecting' (new session).
   // Auto-ends call when timer hits 0.
+  // NOTE: no cleanup return — removing it was intentional. The cleanup ran on every
+  // phase change (idle→listening, etc.), clearing the interval before sessionActiveRef
+  // could restart it, freezing the display. The interval is self-clearing at the limit.
   const sessionActiveRef = useRef(false)
   useEffect(() => {
     const live = phase !== 'connecting' && phase !== 'ended'
@@ -185,7 +188,6 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
       if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
       if (phase === 'connecting') setSessionSecs(0)
     }
-    return () => { if (timerRef.current) clearInterval(timerRef.current) }
   }, [phase])
 
   // Per-turn recording cap — prevents unlimited speech, but submits the turn
@@ -502,7 +504,7 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
                     session
                   </span>
                   <span>
-                    <strong>{formatClock(RECORDING_LIMIT_SECS)}</strong>
+                    <strong>{isRecording ? recordingCountdown : formatClock(RECORDING_LIMIT_SECS)}</strong>
                     turn cap
                   </span>
                   <span>

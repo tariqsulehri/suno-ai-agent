@@ -24,40 +24,36 @@ export function resolveSqliteDbPath(): string {
     ? filePath
     : path.resolve(process.cwd(), filePath)
 
-  // ── Vercel / read-only bundle detection ──────────────────────────────────────
-  // Vercel serverless functions run from /var/task which is read-only.
-  // process.env.VERCEL is automatically set to '1' on all Vercel deployments.
-  // Without DATABASE_URL the resolved path would be inside the bundle, which
-  // would make every db.review.create() throw "attempt to write a readonly database".
-  // Solution: always redirect to /tmp (writable, per-instance ephemeral storage)
-  // and seed it from the bundled read-only copy if it doesn't exist yet.
-  const isReadOnlyDeploy =
-    Boolean(process.env.VERCEL) ||
-    resolved.startsWith('/var/task') ||
-    resolved.startsWith('/var/runtime')
+  // ── Read-only check (works on Vercel, Railway, any read-only bundle) ──────────
+  // Rather than guessing the runtime environment from env vars or path prefixes,
+  // we probe the file directly: if it exists but is not writable (Vercel bundles
+  // /var/task as read-only), redirect all I/O to /tmp/dev.db which is always
+  // writable in serverless environments.
+  if (fs.existsSync(resolved)) {
+    const writable = (() => {
+      try { fs.accessSync(resolved, fs.constants.W_OK); return true }
+      catch { return false }
+    })()
 
-  if (isReadOnlyDeploy) {
-    const tmp = '/tmp/dev.db'
-    if (!fs.existsSync(tmp)) {
-      // Copy the bundled snapshot — resolved is the read-only source
-      if (fs.existsSync(resolved)) {
+    if (!writable) {
+      const tmp = '/tmp/dev.db'
+      if (!fs.existsSync(tmp)) {
         fs.copyFileSync(resolved, tmp)
       }
+      return tmp
     }
-    return tmp
+
+    return resolved   // file exists and is writable — use it (local dev, custom path)
   }
 
-  // ── Local / non-Vercel ────────────────────────────────────────────────────────
-  // Seed the target file if it doesn't exist yet (e.g. DATABASE_URL points to
-  // an empty /tmp on a self-hosted server that starts fresh).
-  if (!fs.existsSync(resolved)) {
-    const seed = path.join(process.cwd(), 'dev.db')
-    if (fs.existsSync(seed)) {
-      fs.mkdirSync(path.dirname(resolved), { recursive: true })
-      fs.copyFileSync(seed, resolved)
-    }
+  // ── File doesn't exist yet ────────────────────────────────────────────────────
+  // Happens on first cold-start when DATABASE_URL points to an empty /tmp,
+  // or on a self-hosted server with a fresh data directory.
+  const seed = path.join(process.cwd(), 'dev.db')
+  if (fs.existsSync(seed) && seed !== resolved) {
+    fs.mkdirSync(path.dirname(resolved), { recursive: true })
+    fs.copyFileSync(seed, resolved)
   }
-
   return resolved
 }
 

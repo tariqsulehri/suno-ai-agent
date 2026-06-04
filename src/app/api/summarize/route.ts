@@ -233,11 +233,16 @@ async function persistReview({
     },
   })
 
-  if (lead.name || lead.email || lead.phone) {
-    await db.lead.create({
-      data: { reviewId: created.id, name: lead.name, email: lead.email, phone: lead.phone },
-    })
-  }
+  // Always persist a lead record — fill placeholder defaults for any missing fields
+  // so the dashboard never shows empty rows and exports stay consistent.
+  await db.lead.create({
+    data: {
+      reviewId: created.id,
+      name:     lead.name  || 'Unknown',
+      email:    lead.email || 'unknown@email.com',
+      phone:    lead.phone || null,
+    },
+  })
 
   // Non-blocking, non-fatal background tasks
   embedReview(review, summary.summary, summary.keyPoints, tenant.openaiApiKey)

@@ -37,14 +37,14 @@ const THEMES: VoiceThemeName[] = ['nexus', 'daylight', 'emerald', 'ember']
 
 // ── Status copy ────────────────────────────────────────────────────────────────
 const STATUS: Record<Phase, string> = {
-  connecting:   'Initializing secure voice channel',
-  idle:         'Ready for customer input',
-  listening:    'Listening with pause tolerance',
-  transcribing: 'Converting voice to structured insight',
-  thinking:     'Classifying intent and sentiment',
-  speaking:     'Agent response in progress',
-  ended:        'Conversation submitted',
-  error:        'Connection needs attention',
+  connecting:   'Starting up — please wait a moment…',
+  idle:         'Ready — press the button and speak',
+  listening:    'Listening — speak clearly, we are recording',
+  transcribing: 'Processing your voice — please wait…',
+  thinking:     'Preparing your response — please wait…',
+  speaking:     'Agent is speaking — please listen',
+  ended:        'Session complete — thank you',
+  error:        'Something went wrong — please try again',
 }
 
 // ── Public interface ───────────────────────────────────────────────────────────
@@ -635,10 +635,12 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
                 )}
 
                 <p className="nx-btn-lbl">
-                  {isRecording         ? 'Recording active · tap to send'
-                   : busy              ? 'Please wait…'
-                   : phase === 'speaking' ? 'Agent is responding…'
-                   : 'Press to start secure voice capture'}
+                  {isRecording             ? 'Recording active · tap to send'
+                   : phase === 'transcribing' ? 'Processing your voice — please wait…'
+                   : phase === 'thinking'     ? 'Preparing your response — please wait…'
+                   : phase === 'connecting'   ? 'Starting up — please wait…'
+                   : phase === 'speaking'     ? 'Agent is speaking — please listen'
+                   : 'Press the button to start speaking'}
                 </p>
 
                 <div className="nx-end-policy">
@@ -652,14 +654,38 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
             <section className="nx-conversation-panel" style={{ borderColor: color + '26' }}>
               <div className="nx-conversation-head">
                 <span>Live conversation</span>
-                <span>{phase === 'error' ? 'Needs retry' : `Session ${sessionCountdown}`}</span>
+                <span>
+                  {phase === 'error'        ? 'Error — please retry'
+                   : phase === 'transcribing' ? 'Processing…'
+                   : phase === 'thinking'     ? 'Thinking…'
+                   : phase === 'connecting'   ? 'Starting up…'
+                   : `Session ${sessionCountdown}`}
+                </span>
               </div>
+
+              {/* ── Processing notice (Fix 2) — visible during voice-to-text + LLM ── */}
+              {(phase === 'transcribing' || phase === 'thinking') && (
+                <div className="flex items-center gap-2.5 px-4 py-2.5 border-b"
+                     style={{ borderColor: color + '22', background: color + '0a' }}>
+                  <span className="flex gap-1 shrink-0">
+                    {[0, 150, 300].map((delay) => (
+                      <span key={delay} className="block w-1.5 h-1.5 rounded-full animate-bounce"
+                            style={{ background: color, animationDelay: `${delay}ms` }} />
+                    ))}
+                  </span>
+                  <p className="text-xs font-semibold" style={{ color }}>
+                    {phase === 'transcribing'
+                      ? 'Processing your voice — please wait…'
+                      : 'Preparing your response — please wait…'}
+                  </p>
+                </div>
+              )}
 
               <div ref={transcriptRef} className="nx-transcript scrollbar-thin">
                 {transcript.length === 0 && phase !== 'connecting' && (
                   <div className="nx-empty">
                     <p className="nx-empty-t">Voice channel standing by</p>
-                    <p className="nx-empty-s">Press the signal button and speak naturally</p>
+                    <p className="nx-empty-s">Press the button and speak naturally</p>
                   </div>
                 )}
 

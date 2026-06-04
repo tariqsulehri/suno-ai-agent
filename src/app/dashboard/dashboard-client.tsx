@@ -51,6 +51,18 @@ function fmtContact(v: string | null | undefined): string | null {
 function fmtText(v: string | null | undefined, fallback = '—'): string {
   return v?.trim() || fallback
 }
+function fmtDateTime(dateStr: string): string {
+  const d = new Date(dateStr)
+  const date = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })
+  return `${date} · ${time}`
+}
+function fmtDateTimeShort(dateStr: string): string {
+  const d = new Date(dateStr)
+  const date = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })
+  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })
+  return `${date}, ${time}`
+}
 
 // ── Search types ───────────────────────────────────────────────────────────────
 interface SearchSource {
@@ -663,7 +675,7 @@ function TranscriptModal({
               )}
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              {new Date(review.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
+              {fmtDateTime(review.createdAt)}
               {review.subcategory && ` · ${review.subcategory}`}
             </p>
           </div>
@@ -1121,7 +1133,7 @@ function ReviewsPanel({ reviews: initial }: { reviews: DashboardData['recentRevi
                   <div className="flex items-center gap-2 shrink-0">
                     {r.rating && <span className="text-xs text-yellow-500 font-semibold">{RATING_EMOJI[r.rating]} {r.rating}★</span>}
                     <span className="text-xs text-slate-500">
-                      {new Date(r.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })}
+                      {fmtDateTimeShort(r.createdAt)}
                     </span>
                     <span className="text-xs text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">View →</span>
                   </div>

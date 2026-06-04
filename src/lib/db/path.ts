@@ -24,9 +24,32 @@ export function resolveSqliteDbPath(): string {
     ? filePath
     : path.resolve(process.cwd(), filePath)
 
-  // On Vercel (and any read-only deployment), DATABASE_URL points to /tmp.
-  // The /tmp directory is writable but starts empty on each cold start.
-  // If the target path doesn't exist yet, seed it from the bundled dev.db.
+  // ── Vercel / read-only bundle detection ──────────────────────────────────────
+  // Vercel serverless functions run from /var/task which is read-only.
+  // process.env.VERCEL is automatically set to '1' on all Vercel deployments.
+  // Without DATABASE_URL the resolved path would be inside the bundle, which
+  // would make every db.review.create() throw "attempt to write a readonly database".
+  // Solution: always redirect to /tmp (writable, per-instance ephemeral storage)
+  // and seed it from the bundled read-only copy if it doesn't exist yet.
+  const isReadOnlyDeploy =
+    Boolean(process.env.VERCEL) ||
+    resolved.startsWith('/var/task') ||
+    resolved.startsWith('/var/runtime')
+
+  if (isReadOnlyDeploy) {
+    const tmp = '/tmp/dev.db'
+    if (!fs.existsSync(tmp)) {
+      // Copy the bundled snapshot — resolved is the read-only source
+      if (fs.existsSync(resolved)) {
+        fs.copyFileSync(resolved, tmp)
+      }
+    }
+    return tmp
+  }
+
+  // ── Local / non-Vercel ────────────────────────────────────────────────────────
+  // Seed the target file if it doesn't exist yet (e.g. DATABASE_URL points to
+  // an empty /tmp on a self-hosted server that starts fresh).
   if (!fs.existsSync(resolved)) {
     const seed = path.join(process.cwd(), 'dev.db')
     if (fs.existsSync(seed)) {

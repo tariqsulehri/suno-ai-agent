@@ -75,7 +75,6 @@ export function useSpeechSynthesis({ language = 'English', onPlaybackEnd }: Opti
     }
 
     speechSynthesis.speak(utt)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [langCode, onPlaybackEnd])
 
   const enqueue = useCallback((text: string) => {

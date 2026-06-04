@@ -298,7 +298,6 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
       startResetCountdown()
     }, 2500)
     return () => { if (endTimerRef.current) clearTimeout(endTimerRef.current) }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [callSummary, endStep])
 
   // Dismiss incomplete prompt automatically if the user picks up the mic again
@@ -328,7 +327,6 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
     setStatusOpacity(0)
     const t = setTimeout(() => { setStatusText(next); setStatusOpacity(1) }, 130)
     return () => clearTimeout(t)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, error])
 
   const color = reviewData.sentiment ? mc(reviewData.sentiment) : themeColor
@@ -566,7 +564,7 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
                 <div className="flex flex-col gap-1.5">
                   <p className="text-sm font-black text-white">Request Incomplete</p>
                   <p className="text-xs font-semibold leading-relaxed" style={{ color: color + 'bb' }}>
-                    Your feedback hasn't been fully captured yet. Please share your experience so
+                    Your feedback has not been fully captured yet. Please share your experience so
                     we can route it to the right team.
                   </p>
                   <p className="text-xs font-semibold leading-relaxed text-slate-400 mt-1">

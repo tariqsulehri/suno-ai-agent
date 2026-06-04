@@ -13,7 +13,7 @@ interface Props {
   phase:         Phase
 }
 
-export function TranscriptPanel({ messages, partialReply, agentName, agentInitials, phase }: Props) {
+export function TranscriptPanel({ messages, partialReply, agentInitials, phase }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {

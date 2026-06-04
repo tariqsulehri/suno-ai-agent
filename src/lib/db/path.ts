@@ -24,35 +24,48 @@ export function resolveSqliteDbPath(): string {
     ? filePath
     : path.resolve(process.cwd(), filePath)
 
-  // ── Read-only check (works on Vercel, Railway, any read-only bundle) ──────────
-  // Rather than guessing the runtime environment from env vars or path prefixes,
-  // we probe the file directly: if it exists but is not writable (Vercel bundles
-  // /var/task as read-only), redirect all I/O to /tmp/dev.db which is always
-  // writable in serverless environments.
-  if (fs.existsSync(resolved)) {
-    const writable = (() => {
-      try { fs.accessSync(resolved, fs.constants.W_OK); return true }
-      catch { return false }
-    })()
-
-    if (!writable) {
-      const tmp = '/tmp/dev.db'
-      if (!fs.existsSync(tmp)) {
-        fs.copyFileSync(resolved, tmp)
-      }
-      return tmp
-    }
-
-    return resolved   // file exists and is writable — use it (local dev, custom path)
+  // ── Helpers ───────────────────────────────────────────────────────────────────
+  const isWritable = (p: string) => {
+    try { fs.accessSync(p, fs.constants.W_OK); return true } catch { return false }
+  }
+  const exists = (p: string) => {
+    try { return fs.existsSync(p) && fs.statSync(p).size > 0 } catch { return false }
   }
 
-  // ── File doesn't exist yet ────────────────────────────────────────────────────
-  // Happens on first cold-start when DATABASE_URL points to an empty /tmp,
-  // or on a self-hosted server with a fresh data directory.
-  const seed = path.join(process.cwd(), 'dev.db')
-  if (fs.existsSync(seed) && seed !== resolved) {
-    fs.mkdirSync(path.dirname(resolved), { recursive: true })
-    fs.copyFileSync(seed, resolved)
+  // ── 1. Resolved path is writable → use it directly (local dev, /tmp already) ──
+  if (exists(resolved) && isWritable(resolved)) return resolved
+
+  // ── 2. Find the bundled seed file ────────────────────────────────────────────
+  // Vercel places traced files at /var/task/<original-relative-path>.
+  // We check several candidates so this works regardless of cwd at runtime.
+  const seedCandidates = [
+    path.join(process.cwd(), 'dev.db'),            // /var/task/dev.db (Vercel)
+    '/var/task/dev.db',                            // explicit fallback
+    path.resolve(__dirname, '../../../dev.db'),    // from src/lib/db → root
+    path.resolve(__dirname, '../../../../dev.db'), // one level deeper
+  ]
+  const seed = seedCandidates.find(c => exists(c) && c !== resolved) ?? null
+
+  // ── 3. Always write to /tmp/dev.db in read-only environments ────────────────
+  const tmp = '/tmp/dev.db'
+  if (!exists(tmp) && seed) {
+    try {
+      fs.copyFileSync(seed, tmp)
+    } catch (err) {
+      console.error('[db/path] Failed to seed /tmp/dev.db:', err)
+    }
+  }
+
+  // If /tmp is usable (Vercel or any read-only deploy), return it
+  if (exists(resolved) && !isWritable(resolved)) return tmp   // file read-only
+  if (!exists(resolved) && exists(tmp))          return tmp   // file absent, /tmp seeded
+
+  // ── 4. Local: resolved doesn't exist yet — create it from seed ───────────────
+  if (!exists(resolved) && seed) {
+    try {
+      fs.mkdirSync(path.dirname(resolved), { recursive: true })
+      fs.copyFileSync(seed, resolved)
+    } catch { /* directory read-only — /tmp was already returned above */ }
   }
   return resolved
 }

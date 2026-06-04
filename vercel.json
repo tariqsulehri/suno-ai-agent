@@ -1,0 +1,9 @@
+{
+  "env": {
+    "DATABASE_URL": "file:/tmp/dev.db"
+  },
+  "functions": {
+    "src/app/api/summarize/route.ts": { "maxDuration": 60 },
+    "src/app/api/chat/route.ts":      { "maxDuration": 60 }
+  }
+}

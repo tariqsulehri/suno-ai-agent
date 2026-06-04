@@ -97,7 +97,7 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
 
   const {
     phase, transcript, partialReply, error,
-    isRecording,
+    isRecording, isPlaying,
     agentName, companyName,
     language, setLanguage,
     reviewData, leadData, callSummary,
@@ -252,9 +252,13 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
     }
   }, [resetSecs, endStep, onReset])
 
-  // Step 1 — phase transitions to 'ended': show sending screen (or skip for positive).
+  // Step 1 — flip to end screen only AFTER agent stops speaking.
+  // phase='ended' while isPlaying=true means the final sentence is still playing.
+  // We wait for isPlaying→false before showing the sending/confirmed screen so
+  // there is no jarring cut while the agent is still mid-sentence.
   useEffect(() => {
     if (phase !== 'ended') return
+    if (isPlaying) return                  // wait — agent still talking
     const isPositive = reviewData.sentiment === 'positive'
     if (isPositive) {
       endTimerRef.current = setTimeout(() => {
@@ -276,7 +280,7 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
       if (resetTickRef.current) clearInterval(resetTickRef.current)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase])
+  }, [phase, isPlaying])
 
   // P3-A: save failed — cancel the 12 s fallback so we never auto-confirm a failure
   useEffect(() => {

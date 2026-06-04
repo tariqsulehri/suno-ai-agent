@@ -40,6 +40,18 @@ const CATEGORY_EMOJI: Record<string, string> = {
 const RATING_EMOJI: Record<number, string> = {
   5: '🌟', 4: '✨', 3: '😐', 2: '😞', 1: '😡',
 }
+// ── Display helpers ────────────────────────────────────────────────────────────
+// Strip default sentinel values stored when the customer didn't share details.
+const UNKNOWN_NAME  = 'Unknown'
+const UNKNOWN_EMAIL = 'unknown@email.com'
+function fmtContact(v: string | null | undefined): string | null {
+  if (!v || v === UNKNOWN_NAME || v === UNKNOWN_EMAIL) return null
+  return v
+}
+function fmtText(v: string | null | undefined, fallback = '—'): string {
+  return v?.trim() || fallback
+}
+
 // ── Search types ───────────────────────────────────────────────────────────────
 interface SearchSource {
   id: string; shop: string; sentiment: string | null; category: string | null
@@ -501,9 +513,9 @@ function EditContactPanel({
   onSaved: (lead: { name: string | null; phone: string | null; email: string | null }) => void
   onCancel: () => void
 }) {
-  const [name,   setName]   = useState(review.leadName  ?? '')
+  const [name,   setName]   = useState(fmtContact(review.leadName)  ?? '')
   const [phone,  setPhone]  = useState(review.leadPhone ?? '')
-  const [email,  setEmail]  = useState(review.leadEmail ?? '')
+  const [email,  setEmail]  = useState(fmtContact(review.leadEmail) ?? '')
   const [saving, setSaving] = useState(false)
   const [err,    setErr]    = useState<string | null>(null)
   const [ok,     setOk]     = useState(false)
@@ -683,29 +695,34 @@ function TranscriptModal({
                   onSaved={handleLeadSaved}
                   onCancel={() => setEditLead(false)}
                 />
-              ) : (lead.name || lead.phone || lead.email) ? (
+              ) : (() => {
+                const dName  = fmtContact(lead.name)
+                const dPhone = lead.phone || null
+                const dEmail = fmtContact(lead.email)
+                return (dName || dPhone || dEmail) ? (
                 <div className="space-y-2">
-                  {lead.name && <p className="text-sm text-slate-800">👤 {lead.name}</p>}
-                  {lead.phone && (
+                  {dName  && <p className="text-sm text-slate-800">👤 {dName}</p>}
+                  {dPhone && (
                     <p className="text-sm text-slate-800 flex items-center gap-2">
-                      📞 <button onClick={() => navigator.clipboard.writeText(lead.phone!)}
+                      📞 <button onClick={() => navigator.clipboard.writeText(dPhone)}
                         className="text-blue-600 hover:underline font-mono" title="Tap to copy">
-                        {lead.phone}
+                        {dPhone}
                       </button>
                     </p>
                   )}
-                  {lead.email && (
+                  {dEmail && (
                     <p className="text-sm text-slate-800 flex items-center gap-2 break-words">
-                      ✉️ <button onClick={() => navigator.clipboard.writeText(lead.email!)}
+                      ✉️ <button onClick={() => navigator.clipboard.writeText(dEmail!)}
                         className="text-blue-600 hover:underline break-all" title="Tap to copy">
-                        {lead.email}
+                        {dEmail}
                       </button>
                     </p>
                   )}
                 </div>
               ) : (
                 <p className="text-xs text-slate-400 italic">No contact details provided</p>
-              )}
+              )
+              })()}
             </div>
 
             {/* Status card */}
@@ -1109,12 +1126,18 @@ function ReviewsPanel({ reviews: initial }: { reviews: DashboardData['recentRevi
                     <span className="text-xs text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">View →</span>
                   </div>
                 </div>
-                <p className="text-xs text-slate-600 leading-relaxed line-clamp-2">{r.summary}</p>
-                {(r.leadName || r.leadPhone) && (
-                  <p className="text-xs text-slate-400 mt-1">
-                    {r.leadName && `👤 ${r.leadName}`}{r.leadPhone && ` · 📞 ${r.leadPhone}`}
-                  </p>
-                )}
+                <p className="text-xs text-slate-600 leading-relaxed line-clamp-2">
+                  {fmtText(r.summary, 'No summary available')}
+                </p>
+                {(() => {
+                  const n = fmtContact(r.leadName)
+                  const p = r.leadPhone || null
+                  return (n || p) ? (
+                    <p className="text-xs text-slate-400 mt-1">
+                      {n && `👤 ${n}`}{p && `${n ? ' · ' : ''}📞 ${p}`}
+                    </p>
+                  ) : null
+                })()}
               </div>
             </button>
           ))}
@@ -1223,7 +1246,7 @@ function SearchPanel() {
                         {CATEGORY_EMOJI[s.category]} {s.category}{s.subcategory ? ` · ${s.subcategory}` : ''}
                       </p>
                     )}
-                    <p className="text-xs text-slate-600 leading-relaxed line-clamp-2">{s.summary}</p>
+                    <p className="text-xs text-slate-600 leading-relaxed line-clamp-2">{fmtText(s.summary, 'No summary available')}</p>
                     {s.rating && (
                       <div className="mt-1.5 text-xs text-yellow-400">{RATING_EMOJI[s.rating]} {s.rating}★</div>
                     )}

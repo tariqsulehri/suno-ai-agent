@@ -251,7 +251,6 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
     if (phase !== 'ended') return
     const isPositive = reviewData.sentiment === 'positive'
     if (isPositive) {
-      // Positive: no send needed — go straight to confirmed after a brief settle
       endTimerRef.current = setTimeout(() => {
         setEndStep('confirmed')
         startResetCountdown()
@@ -272,6 +271,13 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase])
+
+  // P3-A: save failed — cancel the 12 s fallback so we never auto-confirm a failure
+  useEffect(() => {
+    if (phase === 'error' && endStep === 'sending') {
+      if (endTimerRef.current) { clearTimeout(endTimerRef.current); endTimerRef.current = null }
+    }
+  }, [phase, endStep])
 
   // Step 2 — callSummary arrives from API: hold 2.5 s then show confirmed.
   useEffect(() => {
@@ -331,32 +337,56 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
         </div>
       )}
 
-      {/* ════ STEP 1: SENDING ════════════════════════════════════════════ */}
-      {validShop && ended && endStep === 'sending' && (
+      {/* ════ STEP 1: SENDING (or save-failed) ══════════════════════════ */}
+      {/* P2-D: keyed off endStep, not 'ended', so save errors show here  */}
+      {validShop && endStep === 'sending' && (
         <div className="nx-end-screen">
-          <div className="nx-send-wrap">
-            <div className="nx-send-ring nx-sr1" style={{ borderColor: color }} />
-            <div className="nx-send-ring nx-sr2" style={{ borderColor: color }} />
-            <div className="nx-send-ring nx-sr3" style={{ borderColor: color }} />
-            <div className="nx-send-orb"
-                 style={{
-                   background: `radial-gradient(circle at 35% 30%, ${color}55, ${color}18 60%, ${color}06)`,
-                   boxShadow:  `0 0 0 2px ${color}40, 0 0 50px ${color}28`,
-                 }}>
-              <svg viewBox="0 0 24 24" className="w-8 h-8" fill="none"
-                   stroke={color} strokeWidth={1.8} strokeLinecap="round">
-                <line x1="22" y1="2" x2="11" y2="13" />
-                <polygon points="22 2 15 22 11 13 2 9 22 2" />
-              </svg>
+          {phase === 'error' ? (
+            /* ── Save failed — show error in context, never auto-confirm ── */
+            <div className="nx-conf-card" style={{ borderColor: '#F43F5E33' }}>
+              <div className="nx-conf-icon" style={{ borderColor: '#F43F5E50', color: '#F43F5E' }}>
+                <svg viewBox="0 0 24 24" className="w-10 h-10" fill="none"
+                     stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+              </div>
+              <h1 className="nx-conf-title" style={{ color: '#F43F5E' }}>Save Failed</h1>
+              <p className="nx-conf-msg">{error ?? 'Your feedback could not be saved. Please try again.'}</p>
+              <button className="nx-new-btn" onClick={onReset}
+                      style={{ borderColor: '#F43F5E50', color: '#F43F5E' }}>
+                Start New Session
+              </button>
             </div>
-          </div>
-          <p className="nx-send-title">Routing conversation packet</p>
-          <p className="nx-send-sub">Securing transcript, classification, and contact details</p>
-          <div className="nx-send-dots">
-            <span style={{ background: color }} />
-            <span style={{ background: color }} />
-            <span style={{ background: color }} />
-          </div>
+          ) : (
+            /* ── Normal sending animation ── */
+            <>
+              <div className="nx-send-wrap">
+                <div className="nx-send-ring nx-sr1" style={{ borderColor: color }} />
+                <div className="nx-send-ring nx-sr2" style={{ borderColor: color }} />
+                <div className="nx-send-ring nx-sr3" style={{ borderColor: color }} />
+                <div className="nx-send-orb"
+                     style={{
+                       background: `radial-gradient(circle at 35% 30%, ${color}55, ${color}18 60%, ${color}06)`,
+                       boxShadow:  `0 0 0 2px ${color}40, 0 0 50px ${color}28`,
+                     }}>
+                  <svg viewBox="0 0 24 24" className="w-8 h-8" fill="none"
+                       stroke={color} strokeWidth={1.8} strokeLinecap="round">
+                    <line x1="22" y1="2" x2="11" y2="13" />
+                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                  </svg>
+                </div>
+              </div>
+              <p className="nx-send-title">Routing conversation packet</p>
+              <p className="nx-send-sub">Securing transcript, classification, and contact details</p>
+              <div className="nx-send-dots">
+                <span style={{ background: color }} />
+                <span style={{ background: color }} />
+                <span style={{ background: color }} />
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -437,7 +467,9 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
       )}
 
       {/* ════ MAIN UI ══════════════════════════════════════════════════════ */}
-      {validShop && !ended && (
+      {/* P2-D: gate on endStep===null, not !ended, so error phase after a save  */}
+      {/* failure stays on the end screen rather than regressing to voice UI.    */}
+      {validShop && endStep === null && (
         <div className="nx-content">
 
           {/* ── Error banner ────────────────────────────────────────────── */}

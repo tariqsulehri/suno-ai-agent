@@ -50,7 +50,7 @@ export default async function VoicePage({ searchParams }: VoicePageProps) {
 
   const tenantId = session.tenantId ?? 'outlet-reviews'
   const token = undefined
-  const shopCode = shop.branchCode ?? shop.tenantId
+  const shopCode = shop.branchCode ?? ''
   const modeParam = typeof params.mode === 'string' ? params.mode : undefined
   const launcherParam = typeof params.launcher === 'string' ? params.launcher : undefined
   const marginParam = typeof params.margin === 'string' ? params.margin : undefined

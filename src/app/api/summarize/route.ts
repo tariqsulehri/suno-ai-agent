@@ -19,6 +19,11 @@ export async function POST(req: NextRequest) {
     ? getTenantById(session.tenantId)
     : null
 
+  // P2-A: if the agent's tenant was removed from the registry, fail explicitly
+  if (session?.role === 'agent' && session.tenantId && !sessionTenant) {
+    return NextResponse.json({ error: 'Agent configuration not found — contact your administrator' }, { status: 400 })
+  }
+
   const authError = sessionTenant ? null : requireEmbedApiAuth(req)
   if (authError) return authError
 
@@ -52,8 +57,13 @@ export async function POST(req: NextRequest) {
       keyPoints: [],
       ...(review ? { review } : {}),
     }
-    const ticket = await persistReview({ tenant, lead, review, summary: quickSummary, messages, shopCode, shopId })
-    return NextResponse.json({ ...quickSummary, ticket, email: null })
+    try {
+      const ticket = await persistReview({ tenant, lead, review, summary: quickSummary, messages, shopCode, shopId })
+      return NextResponse.json({ ...quickSummary, ticket, email: null })
+    } catch (err) {
+      console.error('[summarize quick persist]', err)
+      return NextResponse.json({ error: String((err as Error).message ?? 'Save failed') }, { status: 500 })
+    }
   }
 
   if (conversation.length < 1) {
@@ -62,9 +72,16 @@ export async function POST(req: NextRequest) {
       keyPoints: [],
       ...(review ? { review } : {}),
     }
-    const email = await sendCallSummaryEmail({ tenant, lead, summary: briefSummary, messages })
-    const ticket = await persistReview({ tenant, lead, review, summary: briefSummary, messages, shopCode, shopId })
-    return NextResponse.json({ ...briefSummary, ticket, email })
+    let email = null
+    try { email = await sendCallSummaryEmail({ tenant, lead, summary: briefSummary, messages }) }
+    catch (err) { console.error('[summarize brief email]', err) }
+    try {
+      const ticket = await persistReview({ tenant, lead, review, summary: briefSummary, messages, shopCode, shopId })
+      return NextResponse.json({ ...briefSummary, ticket, email })
+    } catch (err) {
+      console.error('[summarize brief persist]', err)
+      return NextResponse.json({ error: String((err as Error).message ?? 'Save failed') }, { status: 500 })
+    }
   }
 
   const agentLabel = tenant.agentName
@@ -123,11 +140,19 @@ Return only valid JSON: { "summary": "...", "keyPoints": ["...", "..."] }`
     console.error('[summarize] LLM failed — saving with fallback summary:', err)
   }
 
-  // Always persist and email regardless of whether LLM succeeded
-  const email = await sendCallSummaryEmail({ tenant, lead, summary, messages })
-  const ticket = await persistReview({ tenant, lead, review, summary, messages, shopCode, shopId })
+  // Email is non-fatal — failure is logged but doesn't block the DB save
+  let email = null
+  try { email = await sendCallSummaryEmail({ tenant, lead, summary, messages }) }
+  catch (err) { console.error('[summarize email]', err) }
 
-  return NextResponse.json({ ...summary, ticket, email })
+  // P1-A: DB persist failure is fatal — return 500 so the client shows an error
+  try {
+    const ticket = await persistReview({ tenant, lead, review, summary, messages, shopCode, shopId })
+    return NextResponse.json({ ...summary, ticket, email })
+  } catch (err) {
+    console.error('[summarize persist]', err)
+    return NextResponse.json({ error: String((err as Error).message ?? 'Save failed') }, { status: 500 })
+  }
 }
 
 // ── Persist to SQLite + embed vector ──────────────────────────────────────────
@@ -175,72 +200,59 @@ async function persistReview({
   shopCode:  string
   shopId:    string | null
 }): Promise<CallSummary['ticket']> {
-  try {
-    if (tenant.agentType !== 'reviews' && tenant.agentType !== 'complaints') return null
+  if (tenant.agentType !== 'reviews' && tenant.agentType !== 'complaints') return null
 
-    initVectorTable()
+  initVectorTable()
 
-    const shop = shopId
-      ? await db.shop.findUnique({ where: { id: shopId } })
-      : await resolveReviewShop(tenant, shopCode)
-    if (!shop) throw new Error('Authenticated shop not found')
-    const ticket = classifyTicket(review)
+  // P1-A: errors now propagate — callers wrap in try/catch and return 500
+  const shop = shopId
+    ? await db.shop.findUnique({ where: { id: shopId } })
+    : await resolveReviewShop(tenant, shopCode)
+  if (!shop) throw new Error('Shop not found — please contact your administrator')
 
-    // Save structured review row
-    const created = await db.review.create({
-      data: {
-        shopId:      shop.id,
-        sentiment:   review?.sentiment   ?? null,
-        category:    review?.category    ?? null,
-        subcategory: review?.subcategory ?? null,
-        rating:      review?.rating      ?? null,
-        items:       review?.items       ? JSON.stringify(review.items) : null,
-        summary:     summary.summary,
-        keyPoints:   JSON.stringify(summary.keyPoints),
-        transcript:  JSON.stringify(messages),
-        ticketId:       ticket?.id ?? null,
-        ticketType:     ticket?.type ?? null,
-        ticketPriority: ticket?.priority ?? null,
-        slaDueAt:       ticket?.slaDueAt ?? null,
-      },
+  const ticket = classifyTicket(review)
+
+  // P3-C: strip synthetic __GREET__ turn from stored transcript
+  const cleanMessages = messages.filter((m) => m.content !== '__GREET__')
+
+  const created = await db.review.create({
+    data: {
+      shopId:      shop.id,
+      sentiment:   review?.sentiment   ?? null,
+      category:    review?.category    ?? null,
+      subcategory: review?.subcategory ?? null,
+      rating:      review?.rating      ?? null,
+      items:       review?.items       ? JSON.stringify(review.items) : null,
+      summary:     summary.summary,
+      keyPoints:   JSON.stringify(summary.keyPoints),
+      transcript:  JSON.stringify(cleanMessages),
+      ticketId:       ticket?.id ?? null,
+      ticketType:     ticket?.type ?? null,
+      ticketPriority: ticket?.priority ?? null,
+      slaDueAt:       ticket?.slaDueAt ?? null,
+    },
+  })
+
+  if (lead.name || lead.email || lead.phone) {
+    await db.lead.create({
+      data: { reviewId: created.id, name: lead.name, email: lead.email, phone: lead.phone },
     })
-
-    // Save optional contact info — auto-fill company from shop
-    if (lead.name || lead.email || lead.phone) {
-      await db.lead.create({
-        data: {
-          reviewId: created.id,
-          name:     lead.name,
-          email:    lead.email,
-          phone:    lead.phone,
-        },
-      })
-    }
-
-    // Generate and store embedding vector (non-blocking, non-fatal)
-    embedReview(review, summary.summary, summary.keyPoints, tenant.openaiApiKey)
-      .then((vec) => upsertReviewVector(created.id, vec))
-      .catch((err) => console.error('[embed]', err))
-
-    // Fire escalation alert for complaints / low-rated negatives (non-blocking)
-    const isEscalation =
-      review?.sentiment === 'complaint' ||
-      (review?.sentiment === 'negative' && review.rating !== null && review.rating <= 2)
-    if (isEscalation) {
-      sendEscalationAlert({
-        tenant,
-        lead,
-        review,
-        shopName: shop.name,
-        summary:  summary.summary,
-      }).catch((err) => console.error('[escalation]', err))
-    }
-
-    return ticket ? { ...ticket, slaDueAt: ticket.slaDueAt.toISOString() } : null
-  } catch (err) {
-    console.error('[persist-review]', err)
-    return null
   }
+
+  // Non-blocking, non-fatal background tasks
+  embedReview(review, summary.summary, summary.keyPoints, tenant.openaiApiKey)
+    .then((vec) => upsertReviewVector(created.id, vec))
+    .catch((err) => console.error('[embed]', err))
+
+  const isEscalation =
+    review?.sentiment === 'complaint' ||
+    (review?.sentiment === 'negative' && review.rating !== null && review.rating <= 2)
+  if (isEscalation) {
+    sendEscalationAlert({ tenant, lead, review, shopName: shop.name, summary: summary.summary })
+      .catch((err) => console.error('[escalation]', err))
+  }
+
+  return ticket ? { ...ticket, slaDueAt: ticket.slaDueAt.toISOString() } : null
 }
 
 async function resolveReviewShop(
@@ -249,27 +261,12 @@ async function resolveReviewShop(
 ) {
   const branchCode = shopCode.trim() || null
 
+  // P1-C / P3-B: try exact branchCode match first, then fall back to the tenant's shop.
+  // Never auto-create — unknown codes return null and the caller throws a 500.
   if (branchCode) {
     const byBranch = await db.shop.findFirst({ where: { tenantId: tenant.id, branchCode } })
     if (byBranch) return byBranch
   }
 
-  const byTenant = await db.shop.findFirst({ where: { tenantId: tenant.id } })
-  if (byTenant) {
-    if (branchCode && !byTenant.branchCode) {
-      return db.shop.update({
-        where: { tenantId: tenant.id },
-        data:  { branchCode },
-      })
-    }
-    return byTenant
-  }
-
-  return db.shop.create({
-    data: {
-      tenantId:    tenant.id,
-      name:        branchCode ? `${tenant.companyName} ${branchCode}` : tenant.companyName,
-      branchCode,
-    },
-  })
+  return db.shop.findFirst({ where: { tenantId: tenant.id } })
 }

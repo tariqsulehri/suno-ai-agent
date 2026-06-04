@@ -40,6 +40,7 @@ model User {
   shopId       String?
   shop         Shop?    @relation(fields: [shopId], references: [id])
   active       Boolean  @default(true)
+  demoPassword String?  // plaintext — demo auto-fill only, never used for auth
   createdAt    DateTime @default(now())
 }
 

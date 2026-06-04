@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, FormEvent, Suspense } from 'react'
+import React, { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
@@ -9,6 +9,8 @@ interface ShopOption {
   name: string
   city: string | null
   branchCode: string | null
+  agentUsername: string | null
+  agentPassword: string | null
 }
 
 const STORAGE_KEY = 'agent_username'
@@ -41,15 +43,22 @@ function AgentLoginForm() {
     requestAnimationFrame(() => setMounted(true))
 
     fetch('/api/shops')
-      .then((res) => res.json())
-      .then((data: ShopOption[]) => {
+      .then(async (res) => {
+        if (!res.ok) throw new Error('shops api error')
+        const data = await res.json() as ShopOption[]
         setShops(data)
-        setShopId((prev) => prev || data[0]?.id || '')
+        // Auto-select first shop and pre-fill its demo credentials
+        const first = data[0]
+        if (first) {
+          setShopId((prev) => prev || first.id)
+          if (first.agentUsername) setUsername((u) => u || first.agentUsername!)
+          if (first.agentPassword) setPassword((p) => p || first.agentPassword!)
+        }
       })
       .catch(() => setError('Could not load shops. Please refresh.'))
   }, [])
 
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!shopId || !username.trim() || !password.trim()) return
     const normalizedUsername = username.trim().toLowerCase()
@@ -121,7 +130,14 @@ function AgentLoginForm() {
         <form onSubmit={handleSubmit} className="mt-7 space-y-4">
           <select
             value={shopId}
-            onChange={(e) => setShopId(e.target.value)}
+            onChange={(e) => {
+              const id   = e.target.value
+              const shop = shops.find((s) => s.id === id)
+              setShopId(id)
+              if (shop?.agentUsername) setUsername(shop.agentUsername)
+              if (shop?.agentPassword) setPassword(shop.agentPassword)
+              setError(null)
+            }}
             style={{ borderColor: 'var(--login-field-border)' }}
             className="w-full rounded-xl border bg-slate-950 px-4 py-3 text-sm font-semibold text-white outline-none transition-colors"
             disabled={frozen || shops.length === 0}

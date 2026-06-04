@@ -1,6 +1,13 @@
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
-import { PrismaClient } from '../src/generated/prisma/client'
-import path from 'path'
+import { PrismaClient }        from '../src/generated/prisma/client'
+import path                    from 'path'
+
+async function hashPassword(password: string): Promise<string> {
+  const enc  = new TextEncoder()
+  const salt = process.env.SESSION_SALT ?? 'va-dashboard-2025'
+  const buf  = await crypto.subtle.digest('SHA-256', enc.encode(`${password}:${salt}`))
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('')
+}
 
 const dbUrl = process.env.DATABASE_URL ?? `file:${path.join(process.cwd(), 'dev.db')}`
 const adapter = new PrismaBetterSqlite3({ url: dbUrl })
@@ -243,8 +250,34 @@ async function seed() {
     console.log(`  ${icon} [${shop.name}] ${r.category} · ${r.subcategory} (${r.rating}★)`)
   }
 
-  console.log(`\n✅ Seeded ${shopRecords.length} shops and ${count} reviews.\n`)
-  console.log('Dashboard → http://localhost:3000/dashboard\n')
+  // ── Agent users — one per shop, demo password stored in plain for auto-fill ──
+  const agentDefs = [
+    { shopIndex: 0, username: 'agent-lhr-01', password: 'lhr2025',  tenantId: 'shop-1' },
+    { shopIndex: 1, username: 'agent-isb-01', password: 'isb2025',  tenantId: 'shop-2' },
+  ]
+  console.log('')
+  for (const a of agentDefs) {
+    const shop         = shopRecords[a.shopIndex]
+    const passwordHash = await hashPassword(a.password)
+    await db.user.upsert({
+      where:  { username: a.username },
+      update: { passwordHash, demoPassword: a.password, shopId: shop.id, tenantId: a.tenantId },
+      create: {
+        username:     a.username,
+        passwordHash,
+        demoPassword: a.password,
+        role:         'agent',
+        tenantId:     a.tenantId,
+        shopId:       shop.id,
+        active:       true,
+      },
+    })
+    console.log(`  👤 Agent: ${a.username}  password: ${a.password}  → ${shop.name}`)
+  }
+
+  console.log(`\n✅ Seeded ${shopRecords.length} shops, ${count} reviews, ${agentDefs.length} agents.\n`)
+  console.log('Agent login  → http://localhost:3000/agent-login')
+  console.log('Dashboard    → http://localhost:3000/dashboard\n')
 }
 
 seed()

@@ -311,12 +311,13 @@ export function useVoiceAgent({
     const lead   = leadRef.current
     const review = reviewRef.current
 
+    // P2-B: no abort signal — save always runs to completion so it can't be
+    // silently killed by endCall() aborting the stream controller.
     try {
       const res = await fetch('/api/summarize', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', ...embedHeadersRef.current },
         body:    JSON.stringify({ messages: historyRef.current, lead, review, quick }),
-        signal:  networkAbortRef.current.signal,
       })
       const data = await res.json()
       if (!res.ok) throw new Error(String(data?.error ?? 'Call save failed'))
@@ -324,7 +325,6 @@ export function useVoiceAgent({
       dispatchFn?.({ type: 'CALL_SUMMARY', summary: data as CallSummary })
       console.log('[Call Report]', JSON.stringify({ lead, review, ...data }, null, 2))
     } catch (err) {
-      if ((err as Error).name === 'AbortError') return
       console.error('[summarize]', err)
       dispatchFn?.({ type: 'ERROR', message: 'Call ended, but saving failed. Please retry before closing.' })
     }
@@ -499,14 +499,19 @@ export function useVoiceAgent({
       (m) => m.role === 'user' && m.content !== '__GREET__'
     )
     if (hasUserTurn) {
+      // P1-D: pass isPositive so positive manual end-calls skip LLM summarisation
+      const isPositive = reviewRef.current.sentiment === 'positive'
       networkAbortRef.current = new AbortController()
-      saveCallSummary(dispatch)
+      saveCallSummary(dispatch, isPositive)
     }
   }
 
   // If the agent is mid-sentence, let it finish speaking before transitioning.
   // We only kill the LLM stream (no new text) — existing audio plays to completion.
   const endCall = useCallback(() => {
+    // P2-C: if phase is already 'ended', the save is in progress — don't interfere
+    if (stateRef.current.phase === 'ended') return
+
     if (isRecording) {
       endAfterRecordingRef.current = true
       stopRec()

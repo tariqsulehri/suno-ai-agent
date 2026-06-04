@@ -134,8 +134,12 @@ function AgentLoginForm() {
               const id   = e.target.value
               const shop = shops.find((s) => s.id === id)
               setShopId(id)
-              if (shop?.agentUsername) setUsername(shop.agentUsername)
-              if (shop?.agentPassword) setPassword(shop.agentPassword)
+              // Always overwrite both fields when shop changes.
+              // If the shop has no stored credentials we clear the fields so the
+              // user is forced to enter their own — this prevents the old shop's
+              // password silently staying in the field and causing a wrong-shop login.
+              setUsername(shop?.agentUsername ?? '')
+              setPassword(shop?.agentPassword ?? '')
               setError(null)
             }}
             style={{ borderColor: 'var(--login-field-border)' }}

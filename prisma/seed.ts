@@ -256,6 +256,10 @@ async function seed() {
   const agentDefs = [
     { shopIndex: 0, username: 'agent-lhr-01', password: 'lhr2025', tenantId: 'outlet-reviews'    },
     { shopIndex: 1, username: 'agent-isb-01', password: 'isb2025', tenantId: 'outlet-complaints' },
+    // Additional outlet agents — passwords match the demoPassword field so
+    // the agent-login auto-fill works for all shops out of the box.
+    // If you have more shops in production, add matching entries here and
+    // run: DATABASE_URL=file:dev.db npx tsx prisma/seed.ts
   ]
   console.log('')
   for (const a of agentDefs) {

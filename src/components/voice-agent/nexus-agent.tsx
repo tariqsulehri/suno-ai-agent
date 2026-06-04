@@ -113,18 +113,24 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
   })
 
   const transcriptRef = useRef<HTMLDivElement>(null)
-  const timerRef      = useRef<ReturnType<typeof setInterval> | null>(null)
-  const endTimerRef   = useRef<ReturnType<typeof setTimeout>  | null>(null)
-  const resetTickRef  = useRef<ReturnType<typeof setInterval> | null>(null)
+  const timerRef       = useRef<ReturnType<typeof setInterval> | null>(null)
+  const endTimerRef    = useRef<ReturnType<typeof setTimeout>  | null>(null)
+  const resetTickRef   = useRef<ReturnType<typeof setInterval> | null>(null)
   const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const endCallRef    = useRef(endCall)
+  const idleTimerRef   = useRef<ReturnType<typeof setTimeout>  | null>(null)
+  const endCallRef     = useRef(endCall)
   const toggleMicRef   = useRef(toggleMic)
 
-  const [sessionSecs, setSessionSecs] = useState(0)
-  const [recordSecs,  setRecordSecs]  = useState(0)
-  const [endStep,     setEndStep]    = useState<'sending' | 'confirmed' | null>(null)
-  const [resetSecs,   setResetSecs]  = useState(5)
-  const [themeColor,  setThemeColor] = useState(DEFAULT_COLOR)
+  const [sessionSecs,          setSessionSecs]          = useState(0)
+  const [recordSecs,           setRecordSecs]           = useState(0)
+  const [endStep,              setEndStep]              = useState<'sending' | 'confirmed' | null>(null)
+  const [resetSecs,            setResetSecs]            = useState(5)
+  const [themeColor,           setThemeColor]           = useState(DEFAULT_COLOR)
+  const [showIncompletePrompt, setShowIncompletePrompt] = useState(false)
+  const [callTimedOut,         setCallTimedOut]         = useState(false)
+  // Status-text fade: track displayed text separately so we can cross-fade
+  const [statusText,           setStatusText]           = useState('')
+  const [statusOpacity,        setStatusOpacity]        = useState(1)
   const sessionRef = useRef(`CX-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Date.now().toString(36).slice(-4).toUpperCase()}`)
 
   useEffect(() => {
@@ -291,6 +297,36 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [callSummary, endStep])
 
+  // Dismiss incomplete prompt automatically if the user picks up the mic again
+  useEffect(() => {
+    if (phase !== 'idle') setShowIncompletePrompt(false)
+  }, [phase])
+
+  // Idle timeout — restart the session if the user is silent for 60 s.
+  // Timer resets each time phase leaves 'idle' (user starts speaking / agent responds).
+  useEffect(() => {
+    if (idleTimerRef.current) { clearTimeout(idleTimerRef.current); idleTimerRef.current = null }
+    if (phase !== 'idle' || endStep !== null) return
+    idleTimerRef.current = setTimeout(() => setCallTimedOut(true), 60_000)
+    return () => { if (idleTimerRef.current) { clearTimeout(idleTimerRef.current); idleTimerRef.current = null } }
+  }, [phase, endStep])
+
+  // Auto-restart 3 s after timeout notice is shown.
+  useEffect(() => {
+    if (!callTimedOut) return
+    const t = setTimeout(() => { setCallTimedOut(false); onReset() }, 3_000)
+    return () => clearTimeout(t)
+  }, [callTimedOut, onReset])
+
+  // Status-text cross-fade: fade out → swap text → fade in on every phase change.
+  useEffect(() => {
+    const next = error && phase === 'error' ? error : STATUS[phase]
+    setStatusOpacity(0)
+    const t = setTimeout(() => { setStatusText(next); setStatusOpacity(1) }, 130)
+    return () => clearTimeout(t)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, error])
+
   const color = reviewData.sentiment ? mc(reviewData.sentiment) : themeColor
   const ended = phase === 'ended'
   const busy  = phase === 'thinking' || phase === 'transcribing' || phase === 'connecting'
@@ -310,12 +346,30 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
   const branchLabel = shopCode ? shopCode.toUpperCase() : 'Global'
   const ticket = callSummary?.ticket ?? null
   const handleManualEnd = useCallback(() => {
-    if (hasCustomerTurn || isRecording || phase !== 'idle') {
+    // Already ending — nothing to do
+    if (phase === 'ended' || endStep !== null) return
+
+    // During processing or recording: abort and end immediately — always honour the request
+    if (busy || isRecording) {
       endCall()
       return
     }
-    onReset()
-  }, [endCall, hasCustomerTurn, isRecording, onReset, phase])
+
+    // Nothing spoken yet → just restart (no data to save)
+    if (!hasCustomerTurn) {
+      onReset()
+      return
+    }
+
+    // User has spoken but agent hasn't classified the request yet → warn before ending
+    if (!reviewData.sentiment) {
+      setShowIncompletePrompt(true)
+      return
+    }
+
+    // Context is clear → end and process normally
+    endCall()
+  }, [busy, endCall, endStep, hasCustomerTurn, isRecording, onReset, phase, reviewData.sentiment])
 
   return (
     <div className="nx-root">
@@ -470,7 +524,7 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
       {/* P2-D: gate on endStep===null, not !ended, so error phase after a save  */}
       {/* failure stays on the end screen rather than regressing to voice UI.    */}
       {validShop && endStep === null && (
-        <div className="nx-content">
+        <div className="nx-content relative">
 
           {/* ── Error banner ────────────────────────────────────────────── */}
           {phase === 'error' && error && (
@@ -478,6 +532,60 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
               {error.includes('quota') || error.includes('429')
                 ? <>Service limit reached — please try again later</>
                 : <>{error}</>}
+            </div>
+          )}
+
+          {/* ── Idle-timeout overlay ─────────────────────────────────────── */}
+          {callTimedOut && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center"
+                 style={{ background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(6px)' }}>
+              <div className="flex flex-col items-center gap-3 px-8 py-7 rounded-2xl border text-center"
+                   style={{ background: 'var(--nx-surface, #0f1923)', borderColor: color + '40', maxWidth: '320px' }}>
+                <svg viewBox="0 0 24 24" className="w-10 h-10 opacity-60" fill="none"
+                     stroke={color} strokeWidth="1.8" strokeLinecap="round">
+                  <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+                </svg>
+                <p className="text-sm font-black text-white">Session Timed Out</p>
+                <p className="text-xs font-semibold" style={{ color: color + 'cc' }}>
+                  No activity detected for 60 seconds. Starting a new session…
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ── Incomplete-request prompt ─────────────────────────────────── */}
+          {showIncompletePrompt && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center"
+                 style={{ background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(6px)' }}>
+              <div className="flex flex-col gap-4 px-8 py-7 rounded-2xl border"
+                   style={{ background: 'var(--nx-surface, #0f1923)', borderColor: color + '40', maxWidth: '320px', width: '100%' }}>
+                <div className="flex flex-col gap-1.5">
+                  <p className="text-sm font-black text-white">Request Incomplete</p>
+                  <p className="text-xs font-semibold leading-relaxed" style={{ color: color + 'bb' }}>
+                    Your feedback hasn't been fully captured yet. Please share your experience so
+                    we can route it to the right team.
+                  </p>
+                  <p className="text-xs font-semibold leading-relaxed text-slate-400 mt-1">
+                    Would you still like to end the call?
+                  </p>
+                </div>
+                <div className="flex gap-3 mt-1">
+                  <button
+                    onClick={() => { setShowIncompletePrompt(false); endCall() }}
+                    className="flex-1 rounded-xl py-2.5 text-xs font-black text-white border transition-colors hover:opacity-80"
+                    style={{ borderColor: '#F43F5E55', background: '#F43F5E18', color: '#F43F5E' }}
+                  >
+                    Yes, End Call
+                  </button>
+                  <button
+                    onClick={() => setShowIncompletePrompt(false)}
+                    className="flex-1 rounded-xl py-2.5 text-xs font-black border transition-colors hover:opacity-80"
+                    style={{ borderColor: color + '55', background: color + '14', color }}
+                  >
+                    No, Continue
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -522,7 +630,7 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
 
           <div className="nx-main-grid">
             <section className="nx-agent-rail">
-              <section className="nx-agent-panel" style={{ borderColor: color + '26' }}>
+              <section className="nx-agent-panel" style={{ borderColor: color + '26', transition: 'border-color 0.5s ease' }}>
                 <div className="nx-agent-topline">
                   <div className="nx-agent-meta">
                     <span className="nx-agent-kicker">Experience Intelligence</span>
@@ -556,16 +664,18 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
                 </div>
 
                 <p className="nx-agent-name">Live AI operator</p>
-                <p className="nx-status-txt" role="status" aria-live="polite">
-                  {error && phase === 'error' ? error : STATUS[phase]}
+                {/* Cross-fade status text so phase transitions don't hard-cut */}
+                <p className="nx-status-txt" role="status" aria-live="polite"
+                   style={{ opacity: statusOpacity, transition: 'opacity 0.13s ease' }}>
+                  {statusText || STATUS[phase]}
                 </p>
               </div>
 
               {reviewData.sentiment && (
                 <div className="nx-mood"
-                     style={{ background: color + '12', borderColor: color + '28' }}>
-                  <span className="nx-mood-dot" style={{ background: color, boxShadow: `0 0 8px ${color}` }} />
-                  <span style={{ color, fontSize: '0.73rem', fontWeight: 600 }}>
+                     style={{ background: color + '12', borderColor: color + '28', transition: 'background 0.5s ease, border-color 0.5s ease' }}>
+                  <span className="nx-mood-dot" style={{ background: color, boxShadow: `0 0 8px ${color}`, transition: 'background 0.5s ease, box-shadow 0.5s ease' }} />
+                  <span style={{ color, fontSize: '0.73rem', fontWeight: 600, transition: 'color 0.5s ease' }}>
                     {MOOD_LABEL[reviewData.sentiment]}
                   </span>
                 </div>
@@ -651,7 +761,7 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
               </div>
             </section>
 
-            <section className="nx-conversation-panel" style={{ borderColor: color + '26' }}>
+            <section className="nx-conversation-panel" style={{ borderColor: color + '26', transition: 'border-color 0.5s ease' }}>
               <div className="nx-conversation-head">
                 <span>Live conversation</span>
                 <span>
@@ -663,23 +773,34 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
                 </span>
               </div>
 
-              {/* ── Processing notice (Fix 2) — visible during voice-to-text + LLM ── */}
-              {(phase === 'transcribing' || phase === 'thinking') && (
-                <div className="flex items-center gap-2.5 px-4 py-2.5 border-b"
-                     style={{ borderColor: color + '22', background: color + '0a' }}>
-                  <span className="flex gap-1 shrink-0">
-                    {[0, 150, 300].map((delay) => (
-                      <span key={delay} className="block w-1.5 h-1.5 rounded-full animate-bounce"
-                            style={{ background: color, animationDelay: `${delay}ms` }} />
-                    ))}
-                  </span>
-                  <p className="text-xs font-semibold" style={{ color }}>
-                    {phase === 'transcribing'
-                      ? 'Processing your voice — please wait…'
-                      : 'Preparing your response — please wait…'}
-                  </p>
-                </div>
-              )}
+              {/* Processing notice — always rendered, fades in/out so there's no layout jump */}
+              {(() => {
+                const isProcessing = phase === 'transcribing' || phase === 'thinking'
+                return (
+                  <div className="flex items-center gap-2.5 px-4 py-2.5 border-b overflow-hidden"
+                       style={{
+                         borderColor:    color + '22',
+                         background:     color + '0a',
+                         maxHeight:      isProcessing ? '48px' : '0px',
+                         opacity:        isProcessing ? 1 : 0,
+                         paddingTop:     isProcessing ? undefined : 0,
+                         paddingBottom:  isProcessing ? undefined : 0,
+                         transition:     'max-height 0.3s ease, opacity 0.25s ease, padding 0.3s ease',
+                       }}>
+                    <span className="flex gap-1 shrink-0">
+                      {[0, 150, 300].map((delay) => (
+                        <span key={delay} className="block w-1.5 h-1.5 rounded-full animate-bounce"
+                              style={{ background: color, animationDelay: `${delay}ms`, transition: 'background 0.5s ease' }} />
+                      ))}
+                    </span>
+                    <p className="text-xs font-semibold" style={{ color, transition: 'color 0.5s ease' }}>
+                      {phase === 'transcribing'
+                        ? 'Processing your voice — please wait…'
+                        : 'Preparing your response — please wait…'}
+                    </p>
+                  </div>
+                )
+              })()}
 
               <div ref={transcriptRef} className="nx-transcript scrollbar-thin">
                 {transcript.length === 0 && phase !== 'connecting' && (

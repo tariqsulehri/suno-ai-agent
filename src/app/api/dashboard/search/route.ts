@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db/client'
+import { db, isVectorsEnabled } from '@/lib/db/client'
 import { initVectorTable, searchSimilarReviews } from '@/lib/db/vectors'
 import { embedQuery } from '@/lib/ai/embed'
 import { getOpenAIClient } from '@/lib/ai/client'
@@ -35,6 +35,13 @@ export async function POST(req: NextRequest) {
     if (!query) throw new Error()
   } catch {
     return NextResponse.json({ error: 'query is required' }, { status: 400 })
+  }
+
+  if (!isVectorsEnabled()) {
+    return NextResponse.json({
+      answer:  'AI search is not available in this deployment (vector extension unavailable).',
+      sources: [],
+    })
   }
 
   try {

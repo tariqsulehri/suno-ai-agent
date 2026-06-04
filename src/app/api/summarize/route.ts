@@ -4,7 +4,7 @@ import { requireEmbedApiAuth, getTenantFromRequest } from '@/lib/security/embed-
 import { getSessionFromRequest } from '@/lib/auth/session'
 import { sendCallSummaryEmail } from '@/lib/email/call-summary'
 import { sendEscalationAlert } from '@/lib/email/escalation'
-import { db } from '@/lib/db/client'
+import { db, isVectorsEnabled } from '@/lib/db/client'
 import { initVectorTable, upsertReviewVector } from '@/lib/db/vectors'
 import { embedReview } from '@/lib/ai/embed'
 import { getTenantById } from '@/lib/tenants/registry'
@@ -202,7 +202,8 @@ async function persistReview({
 }): Promise<CallSummary['ticket']> {
   if (tenant.agentType !== 'reviews' && tenant.agentType !== 'complaints') return null
 
-  initVectorTable()
+  // Vectors are optional — skip gracefully when sqlite-vec binary is unavailable (e.g. Vercel)
+  if (isVectorsEnabled()) initVectorTable()
 
   // P1-A: errors now propagate — callers wrap in try/catch and return 500
   const shop = shopId
@@ -244,10 +245,12 @@ async function persistReview({
     },
   })
 
-  // Non-blocking, non-fatal background tasks
-  embedReview(review, summary.summary, summary.keyPoints, tenant.openaiApiKey)
-    .then((vec) => upsertReviewVector(created.id, vec))
-    .catch((err) => console.error('[embed]', err))
+  // Non-blocking, non-fatal background tasks (vectors skipped when extension unavailable)
+  if (isVectorsEnabled()) {
+    embedReview(review, summary.summary, summary.keyPoints, tenant.openaiApiKey)
+      .then((vec) => upsertReviewVector(created.id, vec))
+      .catch((err) => console.error('[embed]', err))
+  }
 
   const isEscalation =
     review?.sentiment === 'complaint' ||

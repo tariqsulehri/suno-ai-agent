@@ -15,9 +15,11 @@ const db = new PrismaClient({ adapter })
 
 // ── Sample data ────────────────────────────────────────────────────────────────
 
+// tenantId MUST match an entry in src/data/tenants.json — 'outlet-reviews' and
+// 'outlet-complaints' are the two review-type tenants in that file.
 const shops = [
-  { tenantId: 'shop-1', name: 'Downtown Branch',  city: 'Lahore',    branchCode: 'LHR-01' },
-  { tenantId: 'shop-2', name: 'Mall Road Outlet', city: 'Islamabad', branchCode: 'ISB-01' },
+  { tenantId: 'outlet-reviews',    name: 'Downtown Branch',  city: 'Lahore',    branchCode: 'LHR-01' },
+  { tenantId: 'outlet-complaints', name: 'Mall Road Outlet', city: 'Islamabad', branchCode: 'ISB-01' },
 ]
 
 type ReviewInput = {
@@ -252,8 +254,8 @@ async function seed() {
 
   // ── Agent users — one per shop, demo password stored in plain for auto-fill ──
   const agentDefs = [
-    { shopIndex: 0, username: 'agent-lhr-01', password: 'lhr2025',  tenantId: 'shop-1' },
-    { shopIndex: 1, username: 'agent-isb-01', password: 'isb2025',  tenantId: 'shop-2' },
+    { shopIndex: 0, username: 'agent-lhr-01', password: 'lhr2025', tenantId: 'outlet-reviews'    },
+    { shopIndex: 1, username: 'agent-isb-01', password: 'isb2025', tenantId: 'outlet-complaints' },
   ]
   console.log('')
   for (const a of agentDefs) {

@@ -40,8 +40,9 @@ export async function POST(req: NextRequest) {
   res.cookies.set(AUTH_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
-    path: '/',
-    maxAge: AUTH_MAX_AGE_SECS,
+    secure:   process.env.NODE_ENV === 'production',  // HTTPS-only on Vercel
+    path:     '/',
+    maxAge:   AUTH_MAX_AGE_SECS,
   })
   return res
 }

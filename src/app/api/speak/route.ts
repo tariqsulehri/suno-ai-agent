@@ -4,13 +4,21 @@ import { isInvalidApiKeyError, isMissingProviderError, isQuotaError } from '@/li
 import { getVoiceForLanguage } from '@/lib/config/voice'
 import { detectLanguage } from '@/lib/utils/detect-language'
 import { requireEmbedApiAuth, getTenantFromRequest } from '@/lib/security/embed-auth'
+import { getSessionFromRequest } from '@/lib/auth/session'
+import { getTenantById } from '@/lib/tenants/registry'
 import type { SpeakRequest } from '@/types'
 export { OPTIONS } from '@/lib/utils/cors'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
-  const authError = requireEmbedApiAuth(req)
+  // Agent sessions bypass embed auth (same pattern as /api/chat and /api/config)
+  const session = await getSessionFromRequest(req)
+  const sessionTenant = session?.role === 'agent' && session.tenantId
+    ? getTenantById(session.tenantId)
+    : null
+
+  const authError = sessionTenant ? null : requireEmbedApiAuth(req)
   if (authError) return authError
 
   let body: SpeakRequest
@@ -27,7 +35,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const tenant           = getTenantFromRequest(req)
+    const tenant           = sessionTenant ?? getTenantFromRequest(req)
     const detectedLanguage = detectLanguage(text, tenant.supportedLanguages)
     const resolvedVoice    = getVoiceForLanguage(detectedLanguage, tenant)
     const resolvedProvider = tenant.ttsProvider

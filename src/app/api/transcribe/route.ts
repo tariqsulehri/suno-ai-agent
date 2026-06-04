@@ -3,13 +3,21 @@ import { transcribeAudio } from '@/lib/ai/transcribe'
 import { isInvalidApiKeyError, isMissingProviderError, isQuotaError } from '@/lib/ai/errors'
 import { getLangConfig } from '@/lib/config/language'
 import { requireEmbedApiAuth, getTenantFromRequest } from '@/lib/security/embed-auth'
+import { getSessionFromRequest } from '@/lib/auth/session'
+import { getTenantById } from '@/lib/tenants/registry'
 import { normalizeSpeechTranscript } from '@/lib/utils/normalize-speech'
 export { OPTIONS } from '@/lib/utils/cors'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
-  const authError = requireEmbedApiAuth(req)
+  // Agent sessions bypass embed auth (same pattern as /api/chat and /api/config)
+  const session = await getSessionFromRequest(req)
+  const sessionTenant = session?.role === 'agent' && session.tenantId
+    ? getTenantById(session.tenantId)
+    : null
+
+  const authError = sessionTenant ? null : requireEmbedApiAuth(req)
   if (authError) return authError
 
   let formData: FormData
@@ -29,7 +37,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const tenant = getTenantFromRequest(req)
+    const tenant = sessionTenant ?? getTenantFromRequest(req)
     const lang   = getLangConfig(tenant.languageMode)
     const raw    = await transcribeAudio(audio, lang.whisperCode, tenant.openaiApiKey)
     const text   = normalizeSpeechTranscript(raw)

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, isVectorsEnabled } from '@/lib/db/client'
+import { connectDB, Review, isVectorsEnabled } from '@/lib/db/client'
 import { initVectorTable, searchSimilarReviews } from '@/lib/db/vectors'
 import { embedQuery } from '@/lib/ai/embed'
 import { getOpenAIClient } from '@/lib/ai/client'
@@ -63,15 +63,16 @@ export async function POST(req: NextRequest) {
     const reviewIds = hits.map((h) => h.review_id)
 
     // Fetch full rows for context
-    const reviews = await db.review.findMany({
-      where:   {
-        id: { in: reviewIds },
-        ...(session.role === 'manager' && session.shopId ? { shopId: session.shopId } : {}),
-      },
-      include: { shop: true, lead: true },
-      orderBy: { createdAt: 'desc' },
-      take:    limit,
+    await connectDB()
+    const reviews = await Review.find({
+      _id: { $in: reviewIds },
+      ...(session.role === 'manager' && session.shopId ? { shopId: session.shopId } : {}),
     })
+      .populate<{ shopId: { _id: string; name: string } }>('shopId')
+      .populate('lead')
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean()
 
     if (reviews.length === 0) {
       return NextResponse.json({
@@ -80,12 +81,21 @@ export async function POST(req: NextRequest) {
       })
     }
 
+    // Look up leads separately (Lead.reviewId → Review._id)
+    const revIds = reviews.map((r) => String(r._id))
+    const { Lead: LeadModel } = await import('@/lib/db/models')
+    const leads = await LeadModel.find({ reviewId: { $in: revIds } }).lean()
+    const leadMap = Object.fromEntries(leads.map((l) => [l.reviewId, l]))
+
+    type PopShop = { _id: string; name: string }
+
     // Build context for GPT
     const context = reviews.map((r, i) => {
       const kp = (() => { try { return JSON.parse(r.keyPoints ?? '[]') } catch { return [] } })()
+      const shopName = r.shopId && typeof r.shopId === 'object' ? (r.shopId as unknown as PopShop).name : ''
       return [
         `[Review ${i + 1}]`,
-        `Shop: ${r.shop.name}`,
+        `Shop: ${shopName}`,
         `Sentiment: ${r.sentiment ?? 'unknown'} | Category: ${r.category ?? 'unknown'} | Rating: ${r.rating ?? 'N/A'}/5`,
         `Summary: ${r.summary}`,
         kp.length ? `Key points: ${kp.join('; ')}` : '',
@@ -114,18 +124,23 @@ export async function POST(req: NextRequest) {
     const answer = completion.choices[0].message.content ?? ''
 
     // Return clean source list (no raw transcript)
-    const sources = reviews.map((r) => ({
-      id:          r.id,
-      shop:        r.shop.name,
-      sentiment:   r.sentiment,
-      category:    r.category,
-      subcategory: r.subcategory,
-      rating:      r.rating,
-      summary:     r.summary,
-      keyPoints:   (() => { try { return JSON.parse(r.keyPoints ?? '[]') } catch { return [] } })(),
-      customer:    r.lead ? { name: r.lead.name, phone: r.lead.phone } : null,
-      createdAt:   r.createdAt,
-    }))
+    const sources = reviews.map((r) => {
+      const rid  = String(r._id)
+      const lead = leadMap[rid]
+      const shopName = r.shopId && typeof r.shopId === 'object' ? (r.shopId as unknown as PopShop).name : ''
+      return {
+        id:          rid,
+        shop:        shopName,
+        sentiment:   r.sentiment,
+        category:    r.category,
+        subcategory: r.subcategory,
+        rating:      r.rating,
+        summary:     r.summary,
+        keyPoints:   (() => { try { return JSON.parse(r.keyPoints ?? '[]') } catch { return [] } })(),
+        customer:    lead ? { name: lead.name, phone: lead.phone } : null,
+        createdAt:   r.createdAt,
+      }
+    })
 
     return NextResponse.json({ answer, sources })
 

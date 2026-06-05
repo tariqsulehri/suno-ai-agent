@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { streamChatReply, extractSentences } from '@/lib/ai/chat'
 import { requireEmbedApiAuth, getTenantFromRequest } from '@/lib/security/embed-auth'
-import { db } from '@/lib/db/client'
+import { connectDB, Shop } from '@/lib/db/client'
 import { getSessionFromRequest } from '@/lib/auth/session'
 import { getTenantById } from '@/lib/tenants/registry'
 import type { ChatMessage } from '@/lib/ai/chat'
@@ -32,8 +32,9 @@ export async function POST(req: NextRequest) {
 
   const tenant   = sessionTenant ?? getTenantFromRequest(req)
   const shopCode = req.headers.get('x-embed-shop') ?? ''
+  await connectDB()
   const shop     = session?.role === 'agent' && session.shopId
-    ? await db.shop.findUnique({ where: { id: session.shopId } })
+    ? await Shop.findById(session.shopId).lean()
     : await resolveShopForChat(tenant, shopCode)
 
   let messages: ChatMessage[]
@@ -189,9 +190,9 @@ export async function POST(req: NextRequest) {
 async function resolveShopForChat(tenant: TenantConfig, shopCode: string) {
   try {
     return shopCode
-      ? await db.shop.findFirst({ where: { tenantId: tenant.id, branchCode: shopCode } })
-          ?? await db.shop.findFirst({ where: { tenantId: tenant.id } })
-      : await db.shop.findFirst({ where: { tenantId: tenant.id } })
+      ? await Shop.findOne({ tenantId: tenant.id, branchCode: shopCode }).lean()
+          ?? await Shop.findOne({ tenantId: tenant.id }).lean()
+      : await Shop.findOne({ tenantId: tenant.id }).lean()
   } catch (err) {
     console.error('[chat] Shop lookup skipped:', err)
     return null

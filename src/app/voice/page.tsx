@@ -4,7 +4,7 @@ import { NexusAgent }       from '@/components/voice-agent/nexus-agent'
 import { ThemeProvider, type ThemeColors, type VoiceThemeName } from '@/components/voice-agent/theme-provider'
 import { hexToChannels, darken, lighten } from '@/lib/utils/color'
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session'
-import { db } from '@/lib/db/client'
+import { connectDB, Shop } from '@/lib/db/client'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import type { CSSProperties } from 'react'
@@ -45,7 +45,8 @@ export default async function VoicePage({ searchParams }: VoicePageProps) {
   const session = await verifySessionToken(cookieStore.get(AUTH_COOKIE)?.value)
   if (session?.role !== 'agent' || !session.shopId) redirect('/agent-login?from=%2Fvoice')
 
-  const shop = await db.shop.findUnique({ where: { id: session.shopId } })
+  await connectDB()
+  const shop = await Shop.findById(session.shopId).lean()
   if (!shop) redirect('/agent-login?from=%2Fvoice')
 
   const tenantId = session.tenantId ?? 'outlet-reviews'

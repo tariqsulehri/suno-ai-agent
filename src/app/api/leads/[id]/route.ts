@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db/client'
+import { connectDB, Lead } from '@/lib/db/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,12 +22,14 @@ export async function PATCH(
   }
 
   try {
-    const updated = await db.lead.update({
-      where: { id },
-      data:  { name, phone, email },
-      select: { id: true, name: true, phone: true, email: true },
-    })
-    return NextResponse.json(updated)
+    await connectDB()
+    const updated = await Lead.findByIdAndUpdate(
+      id,
+      { $set: { name, phone, email } },
+      { new: true, select: '_id name phone email' },
+    ).lean()
+    if (!updated) throw new Error('not found')
+    return NextResponse.json({ id: String(updated._id), name: updated.name, phone: updated.phone, email: updated.email })
   } catch {
     return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
   }

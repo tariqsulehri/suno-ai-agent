@@ -4,7 +4,7 @@ import { requireEmbedApiAuth, getTenantFromRequest } from '@/lib/security/embed-
 import { getSessionFromRequest } from '@/lib/auth/session'
 import { sendCallSummaryEmail } from '@/lib/email/call-summary'
 import { sendEscalationAlert } from '@/lib/email/escalation'
-import { db, isVectorsEnabled } from '@/lib/db/client'
+import { connectDB, Shop, Review, Lead, isVectorsEnabled } from '@/lib/db/client'
 import { initVectorTable, upsertReviewVector } from '@/lib/db/vectors'
 import { embedReview } from '@/lib/ai/embed'
 import { getTenantById } from '@/lib/tenants/registry'
@@ -174,7 +174,7 @@ Return only valid JSON: { "summary": "...", "keyPoints": ["...", "..."] }`
   }
 }
 
-// ── Persist to SQLite + embed vector ──────────────────────────────────────────
+// ── Persist to MongoDB + embed vector ─────────────────────────────────────────
 
 function classifyTicket(review: ReviewData | null) {
   const sentiment = review?.sentiment
@@ -221,12 +221,11 @@ async function persistReview({
 }): Promise<CallSummary['ticket']> {
   if (tenant.agentType !== 'reviews' && tenant.agentType !== 'complaints') return null
 
-  // Vectors are optional — skip gracefully when sqlite-vec binary is unavailable (e.g. Vercel)
-  if (isVectorsEnabled()) initVectorTable()
+  await connectDB()
 
   // P1-A: errors now propagate — callers wrap in try/catch and return 500
   const shop = shopId
-    ? await db.shop.findUnique({ where: { id: shopId } })
+    ? await Shop.findById(shopId).lean()
     : await resolveReviewShop(tenant, shopCode)
   if (!shop) throw new Error('Shop not found — please contact your administrator')
 
@@ -235,41 +234,30 @@ async function persistReview({
   // P3-C: strip synthetic __GREET__ turn from stored transcript
   const cleanMessages = messages.filter((m) => m.content !== '__GREET__')
 
-  const created = await db.review.create({
-    data: {
-      shopId:      shop.id,
-      sentiment:   review?.sentiment   ?? null,
-      category:    review?.category    ?? null,
-      subcategory: review?.subcategory ?? null,
-      rating:      review?.rating      ?? null,
-      items:       review?.items       ? JSON.stringify(review.items) : null,
-      summary:     summary.summary,
-      keyPoints:   JSON.stringify(summary.keyPoints),
-      transcript:  JSON.stringify(cleanMessages),
-      ticketId:       ticket?.id ?? null,
-      ticketType:     ticket?.type ?? null,
-      ticketPriority: ticket?.priority ?? null,
-      slaDueAt:       ticket?.slaDueAt ?? null,
-    },
+  const created = await Review.create({
+    shopId:      String(shop._id),
+    sentiment:   review?.sentiment   ?? null,
+    category:    review?.category    ?? null,
+    subcategory: review?.subcategory ?? null,
+    rating:      review?.rating      ?? null,
+    items:       review?.items       ? JSON.stringify(review.items) : null,
+    summary:     summary.summary,
+    keyPoints:   JSON.stringify(summary.keyPoints),
+    transcript:  JSON.stringify(cleanMessages),
+    ticketId:       ticket?.id       ?? null,
+    ticketType:     ticket?.type     ?? null,
+    ticketPriority: ticket?.priority ?? null,
+    slaDueAt:       ticket?.slaDueAt ?? null,
   })
 
   // Always persist a lead record — fill placeholder defaults for any missing fields
   // so the dashboard never shows empty rows and exports stay consistent.
-  await db.lead.create({
-    data: {
-      reviewId: created.id,
-      name:     lead.name  || 'Unknown',
-      email:    lead.email || 'unknown@email.com',
-      phone:    lead.phone || null,
-    },
+  await Lead.create({
+    reviewId: String(created._id),
+    name:     lead.name  || 'Unknown',
+    email:    lead.email || 'unknown@email.com',
+    phone:    lead.phone || null,
   })
-
-  // Non-blocking, non-fatal background tasks (vectors skipped when extension unavailable)
-  if (isVectorsEnabled()) {
-    embedReview(review, summary.summary, summary.keyPoints, tenant.openaiApiKey)
-      .then((vec) => upsertReviewVector(created.id, vec))
-      .catch((err) => console.error('[embed]', err))
-  }
 
   const isEscalation =
     review?.sentiment === 'complaint' ||
@@ -291,9 +279,9 @@ async function resolveReviewShop(
   // P1-C / P3-B: try exact branchCode match first, then fall back to the tenant's shop.
   // Never auto-create — unknown codes return null and the caller throws a 500.
   if (branchCode) {
-    const byBranch = await db.shop.findFirst({ where: { tenantId: tenant.id, branchCode } })
+    const byBranch = await Shop.findOne({ tenantId: tenant.id, branchCode }).lean()
     if (byBranch) return byBranch
   }
 
-  return db.shop.findFirst({ where: { tenantId: tenant.id } })
+  return Shop.findOne({ tenantId: tenant.id }).lean()
 }

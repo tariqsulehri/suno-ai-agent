@@ -37,6 +37,7 @@
   "exclude": [
     "node_modules",
     "src/cli",
-    "src/shared"
+    "src/shared",
+    "prisma"
   ]
 }

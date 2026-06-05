@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db/client'
+import { connectDB, Shop } from '@/lib/db/client'
 
 // ── PATCH /api/shops/[id] — update editable shop fields ──────────────────────
 export async function PATCH(
@@ -46,7 +46,9 @@ export async function PATCH(
         : parseFloat(String(body.lng))
     }
 
-    const updated = await db.shop.update({ where: { id }, data })
+    await connectDB()
+    const updated = await Shop.findByIdAndUpdate(id, { $set: data }, { new: true }).lean()
+    if (!updated) return NextResponse.json({ error: 'Shop not found' }, { status: 404 })
     return NextResponse.json(updated)
   } catch (err) {
     console.error(`[PATCH /api/shops/${id}]`, err)

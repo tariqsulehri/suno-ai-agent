@@ -1,155 +1,179 @@
-import { db } from './client'
-import Database from 'better-sqlite3'
-import { resolveSqliteDbPath } from './path'
-
-type ReviewRow = {
-  sentiment:   string | null
-  category:    string | null
-  subcategory: string | null
-  rating:      number | null
-}
+import { connectDB } from './connection'
+import { Shop, Review, Lead } from './models'
 
 export interface DashboardScope {
   shopId?: string | null
 }
 
-function rawDb() {
-  return new Database(resolveSqliteDbPath(), { readonly: true })
+function scopeMatch(scope: DashboardScope): Record<string, unknown> {
+  return scope.shopId ? { shopId: scope.shopId } : {}
 }
 
-function scopedWhere(scope: DashboardScope) {
-  return scope.shopId ? { shopId: scope.shopId } : undefined
+async function getTrend(scope: DashboardScope): Promise<{ month: string; count: number }[]> {
+  await connectDB()
+  const twelveMonthsAgo = new Date()
+  twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12)
+
+  const rows = await Review.aggregate([
+    { $match: { ...scopeMatch(scope), createdAt: { $gte: twelveMonthsAgo } } },
+    { $group: { _id: { $dateToString: { format: '%Y-%m', date: '$createdAt' } }, count: { $sum: 1 } } },
+    { $sort: { _id: 1 } },
+  ])
+  return rows.map((r) => ({ month: r._id as string, count: r.count as number }))
 }
 
-function runScopedQuery<T>(sql: string, scope: DashboardScope) {
-  const raw = rawDb()
-  try {
-    return scope.shopId
-      ? raw.prepare(sql).all(scope.shopId) as T[]
-      : raw.prepare(sql).all() as T[]
-  } finally { raw.close() }
+async function getRatingDistribution(scope: DashboardScope): Promise<{ rating: number; count: number }[]> {
+  await connectDB()
+  const rows = await Review.aggregate([
+    { $match: { ...scopeMatch(scope), rating: { $ne: null } } },
+    { $group: { _id: '$rating', count: { $sum: 1 } } },
+    { $sort: { _id: -1 } },
+  ])
+  return rows.map((r) => ({ rating: r._id as number, count: r.count as number }))
 }
 
-function getTrend(scope: DashboardScope): { month: string; count: number }[] {
-  const shopFilter = scope.shopId ? 'AND shopId = ?' : ''
-  return runScopedQuery<{ month: string; count: number }>(`
-    SELECT strftime('%Y-%m', createdAt) AS month, COUNT(*) AS count
-    FROM Review
-    WHERE createdAt >= datetime('now', '-12 months')
-      ${shopFilter}
-    GROUP BY month ORDER BY month ASC
-  `, scope)
+async function getTopIssues(scope: DashboardScope): Promise<{ subcategory: string; category: string; sentiment: string; count: number }[]> {
+  await connectDB()
+  const rows = await Review.aggregate([
+    {
+      $match: {
+        ...scopeMatch(scope),
+        subcategory: { $ne: null },
+        sentiment: { $in: ['negative', 'complaint'] },
+      },
+    },
+    { $group: { _id: { subcategory: '$subcategory', category: '$category', sentiment: '$sentiment' }, count: { $sum: 1 } } },
+    { $sort: { count: -1 } },
+    { $limit: 8 },
+  ])
+  return rows.map((r) => ({
+    subcategory: r._id.subcategory as string,
+    category:    r._id.category   as string,
+    sentiment:   r._id.sentiment  as string,
+    count:       r.count          as number,
+  }))
 }
 
-function getRatingDistribution(scope: DashboardScope): { rating: number; count: number }[] {
-  const shopFilter = scope.shopId ? 'AND shopId = ?' : ''
-  return runScopedQuery<{ rating: number; count: number }>(`
-    SELECT rating, COUNT(*) AS count
-    FROM Review
-    WHERE rating IS NOT NULL
-      ${shopFilter}
-    GROUP BY rating ORDER BY rating DESC
-  `, scope)
+async function getTopSuggestions(scope: DashboardScope): Promise<{ subcategory: string; category: string; count: number }[]> {
+  await connectDB()
+  const rows = await Review.aggregate([
+    { $match: { ...scopeMatch(scope), subcategory: { $ne: null }, sentiment: 'suggestion' } },
+    { $group: { _id: { subcategory: '$subcategory', category: '$category' }, count: { $sum: 1 } } },
+    { $sort: { count: -1 } },
+    { $limit: 6 },
+  ])
+  return rows.map((r) => ({
+    subcategory: r._id.subcategory as string,
+    category:    r._id.category   as string,
+    count:       r.count          as number,
+  }))
 }
 
-function getTopIssues(scope: DashboardScope): { subcategory: string; category: string; sentiment: string; count: number }[] {
-  const shopFilter = scope.shopId ? 'AND shopId = ?' : ''
-  return runScopedQuery<{ subcategory: string; category: string; sentiment: string; count: number }>(`
-    SELECT subcategory, category, sentiment, COUNT(*) AS count
-    FROM Review
-    WHERE subcategory IS NOT NULL
-      AND sentiment IN ('negative','complaint')
-      ${shopFilter}
-    GROUP BY subcategory, category, sentiment
-    ORDER BY count DESC
-    LIMIT 8
-  `, scope)
-}
+async function getRecentReviews(scope: DashboardScope) {
+  await connectDB()
+  const reviews = await Review.find(scopeMatch(scope))
+    .sort({ createdAt: -1 })
+    .limit(200)
+    .lean()
 
-function getTopSuggestions(scope: DashboardScope): { subcategory: string; category: string; count: number }[] {
-  const shopFilter = scope.shopId ? 'AND shopId = ?' : ''
-  return runScopedQuery<{ subcategory: string; category: string; count: number }>(`
-    SELECT subcategory, category, COUNT(*) AS count
-    FROM Review
-    WHERE subcategory IS NOT NULL
-      AND sentiment = 'suggestion'
-      ${shopFilter}
-    GROUP BY subcategory, category
-    ORDER BY count DESC
-    LIMIT 6
-  `, scope)
-}
+  const shopIds  = [...new Set(reviews.map((r) => r.shopId))]
+  const reviewIds = reviews.map((r) => String(r._id))
 
-function getRecentReviews(scope: DashboardScope): {
-  id: string; shopName: string; sentiment: string | null; category: string | null
-  subcategory: string | null; rating: number | null; summary: string | null
-  keyPoints: string | null; transcript: string | null; status: string
-  ticketId: string | null; ticketType: string | null; ticketPriority: string | null; slaDueAt: string | null
-  leadId: string | null; leadName: string | null; leadPhone: string | null; leadEmail: string | null
-  createdAt: string
-}[] {
-  const shopFilter = scope.shopId ? 'WHERE r.shopId = ?' : ''
-  return runScopedQuery<{
-    id: string; shopName: string; sentiment: string | null; category: string | null
-    subcategory: string | null; rating: number | null; summary: string | null
-    keyPoints: string | null; transcript: string | null; status: string
-    ticketId: string | null; ticketType: string | null; ticketPriority: string | null; slaDueAt: string | null
-    leadId: string | null; leadName: string | null; leadPhone: string | null; leadEmail: string | null
-    createdAt: string
-  }>(`
-    SELECT r.id, s.name AS shopName, r.sentiment, r.category,
-           r.subcategory, r.rating, r.summary, r.keyPoints, r.transcript,
-           r.status, r.ticketId, r.ticketType, r.ticketPriority, r.slaDueAt, r.createdAt,
-           l.id AS leadId, l.name AS leadName, l.phone AS leadPhone, l.email AS leadEmail
-    FROM Review r
-    JOIN Shop s ON r.shopId = s.id
-    LEFT JOIN Lead l ON l.reviewId = r.id
-    ${shopFilter}
-    ORDER BY r.createdAt DESC
-    LIMIT 200
-  `, scope)
+  const [shops, leads] = await Promise.all([
+    Shop.find({ _id: { $in: shopIds } }).lean(),
+    Lead.find({ reviewId: { $in: reviewIds } }).lean(),
+  ])
+
+  const shopMap = Object.fromEntries(shops.map((s) => [String(s._id), s.name]))
+  const leadMap = Object.fromEntries(leads.map((l) => [l.reviewId, l]))
+
+  return reviews.map((r) => {
+    const id   = String(r._id)
+    const lead = leadMap[id]
+    return {
+      id,
+      shopName:      shopMap[r.shopId] ?? '',
+      sentiment:     r.sentiment     ?? null,
+      category:      r.category      ?? null,
+      subcategory:   r.subcategory   ?? null,
+      rating:        r.rating        ?? null,
+      summary:       r.summary       ?? null,
+      keyPoints:     r.keyPoints     ?? null,
+      transcript:    r.transcript    ?? null,
+      status:        r.status,
+      ticketId:      r.ticketId      ?? null,
+      ticketType:    r.ticketType    ?? null,
+      ticketPriority: r.ticketPriority ?? null,
+      slaDueAt:      r.slaDueAt ? r.slaDueAt.toISOString() : null,
+      leadId:        lead ? String(lead._id) : null,
+      leadName:      lead?.name  ?? null,
+      leadPhone:     lead?.phone ?? null,
+      leadEmail:     lead?.email ?? null,
+      createdAt:     r.createdAt.toISOString(),
+    }
+  })
 }
 
 export async function getDashboardData(scope: DashboardScope = {}) {
-  const reviewWhere = scopedWhere(scope)
-  const shopWhere = scope.shopId ? { id: scope.shopId } : undefined
+  await connectDB()
+  const match = scopeMatch(scope)
 
-  const [bysentimentRaw, bycategoryRaw, avgRatingRaw, shops, allReviews] = await Promise.all([
-    db.review.groupBy({ by: ['sentiment'], where: reviewWhere, _count: { sentiment: true } }),
-    db.review.groupBy({
-      by: ['category'],
-      where: reviewWhere,
-      _count: { category: true },
-      orderBy: { _count: { category: 'desc' } },
-    }),
-    db.review.aggregate({ where: reviewWhere, _avg: { rating: true } }),
-    db.shop.findMany({
-      where: shopWhere,
-      include: {
-        reviews: { select: { sentiment: true, category: true, subcategory: true, rating: true } },
-      },
-    }),
-    db.review.count({ where: reviewWhere }),
+  const [
+    sentimentAgg,
+    categoryAgg,
+    avgRatingAgg,
+    totalReviews,
+    shops,
+    recentTrend,
+    ratingDist,
+    topIssues,
+    topSuggestions,
+    recentReviews,
+  ] = await Promise.all([
+    Review.aggregate([{ $match: match }, { $group: { _id: '$sentiment', count: { $sum: 1 } } }]),
+    Review.aggregate([{ $match: match }, { $group: { _id: '$category',  count: { $sum: 1 } } }, { $sort: { count: -1 } }]),
+    Review.aggregate([{ $match: { ...match, rating: { $ne: null } } }, { $group: { _id: null, avg: { $avg: '$rating' } } }]),
+    Review.countDocuments(match),
+    Shop.find(scope.shopId ? { _id: scope.shopId } : {}).lean(),
+    getTrend(scope),
+    getRatingDistribution(scope),
+    getTopIssues(scope),
+    getTopSuggestions(scope),
+    getRecentReviews(scope),
   ])
 
-  const recentTrend    = getTrend(scope)
-  const ratingDist     = getRatingDistribution(scope)
-  const topIssues      = getTopIssues(scope)
-  const topSuggestions = getTopSuggestions(scope)
-  const recentReviews  = getRecentReviews(scope)
+  // ── Sentiment + category maps ───────────────────────────────────────────────
+  const bysentiment: Record<string, number> = {}
+  for (const row of sentimentAgg) {
+    if (row._id) bysentiment[row._id as string] = row.count as number
+  }
+
+  const bycategory: Record<string, number> = {}
+  for (const row of categoryAgg) {
+    if (row._id) bycategory[row._id as string] = row.count as number
+  }
+
+  const avgRating = avgRatingAgg[0]?.avg
+    ? parseFloat((avgRatingAgg[0].avg as number).toFixed(2))
+    : null
 
   // ── Per-shop stats ──────────────────────────────────────────────────────────
+  const shopIds = shops.map((s) => String(s._id))
+  const allShopReviews = await Review.find(
+    shopIds.length ? { shopId: { $in: shopIds } } : {},
+  ).select('shopId sentiment category subcategory rating').lean()
+
   const shopStats = shops.map((shop) => {
-    const reviews    = shop.reviews as ReviewRow[]
+    const id      = String(shop._id)
+    const reviews = allShopReviews.filter((r) => r.shopId === id)
     const total      = reviews.length
     const positive   = reviews.filter((r) => r.sentiment === 'positive').length
     const negative   = reviews.filter((r) => r.sentiment === 'negative').length
     const complaint  = reviews.filter((r) => r.sentiment === 'complaint').length
     const suggestion = reviews.filter((r) => r.sentiment === 'suggestion').length
-    const ratings    = reviews.map((r) => r.rating).filter((r): r is number => r !== null)
-    const sum        = ratings.reduce((a: number, b: number) => a + b, 0)
+    const ratings    = reviews.map((r) => r.rating).filter((r): r is number => r != null)
+    const sum        = ratings.reduce((a, b) => a + b, 0)
 
-    // Category breakdown with full sentiment split
     const categoryBreakdown: Record<string, {
       total: number; positive: number; negative: number; complaint: number; suggestion: number
     }> = {}
@@ -165,38 +189,26 @@ export async function getDashboardData(scope: DashboardScope = {}) {
     }
 
     return {
-      id:          shop.id,
-      tenantId:    shop.tenantId,
-      name:        shop.name,
-      city:        shop.city,
+      id,
+      tenantId:     shop.tenantId,
+      name:         shop.name,
+      city:         shop.city,
       total,
       positive,
       negative,
       complaint,
       suggestion,
-      avgRating:   ratings.length ? parseFloat((sum / ratings.length).toFixed(2)) : null,
+      avgRating:    ratings.length ? parseFloat((sum / ratings.length).toFixed(2)) : null,
       categoryBreakdown,
       satisfaction: ratings.length ? Math.round((sum / ratings.length / 5) * 100) : null,
     }
   })
 
-  // ── Global sentiment + category maps ───────────────────────────────────────
-  const bysentiment: Record<string, number> = {}
-  for (const row of bysentimentRaw) {
-    if (row.sentiment) bysentiment[row.sentiment] = row._count.sentiment
-  }
-
-  const bycategory: Record<string, number> = {}
-  for (const row of bycategoryRaw) {
-    if (row.category) bycategory[row.category] = row._count.category
-  }
-
-  // ── Category sentiment split (global) ──────────────────────────────────────
-  const allReviewRows = shops.flatMap((s) => s.reviews) as ReviewRow[]
+  // ── Global category sentiment split ────────────────────────────────────────
   const categorySentiment: Record<string, {
     positive: number; negative: number; complaint: number; suggestion: number; total: number
   }> = {}
-  for (const r of allReviewRows) {
+  for (const r of allShopReviews) {
     if (!r.category) continue
     if (!categorySentiment[r.category])
       categorySentiment[r.category] = { positive: 0, negative: 0, complaint: 0, suggestion: 0, total: 0 }
@@ -208,8 +220,8 @@ export async function getDashboardData(scope: DashboardScope = {}) {
   }
 
   return {
-    totalReviews: allReviews,
-    avgRating:    avgRatingRaw._avg.rating ? parseFloat(avgRatingRaw._avg.rating.toFixed(2)) : null,
+    totalReviews,
+    avgRating,
     bysentiment,
     bycategory,
     categorySentiment,

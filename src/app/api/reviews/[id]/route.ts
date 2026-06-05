@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db/client'
+import { connectDB, Review } from '@/lib/db/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,12 +20,14 @@ export async function PATCH(
   }
 
   try {
-    const updated = await db.review.update({
-      where: { id },
-      data:  { status },
-      select: { id: true, status: true },
-    })
-    return NextResponse.json(updated)
+    await connectDB()
+    const updated = await Review.findByIdAndUpdate(
+      id,
+      { $set: { status } },
+      { new: true, select: '_id status' },
+    ).lean()
+    if (!updated) throw new Error('not found')
+    return NextResponse.json({ id: String(updated._id), status: updated.status })
   } catch {
     return NextResponse.json({ error: 'Review not found' }, { status: 404 })
   }

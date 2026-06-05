@@ -91,12 +91,19 @@ export async function POST(req: NextRequest) {
 
   const isReviewAgent = tenant.agentType === 'reviews' || tenant.agentType === 'complaints'
 
+  // For review/complaint agents the prompt also asks for classification fields so
+  // that even when the real-time [REVIEW:{...}] token is missed (gpt-4o-mini
+  // occasionally omits it), the summarize step still captures sentiment/category.
   const systemPrompt = isReviewAgent
-    ? `You are a feedback summarizer. Given a conversation transcript between a customer and ${agentLabel} (a feedback agent for ${tenant.companyName}), return a JSON object with:
-- "summary": a 2-3 sentence narrative recap of the customer's feedback
-- "keyPoints": an array of 3-5 concise points capturing what the customer said
+    ? `You are a feedback summarizer and classifier. Given a conversation transcript between a customer and ${agentLabel} (a feedback agent for ${tenant.companyName}), return a JSON object with exactly these fields:
+- "summary": 2-3 sentence narrative recap of the customer's feedback
+- "keyPoints": array of 3-5 concise points capturing what the customer said
+- "sentiment": one of "positive" | "negative" | "complaint" | "suggestion"
+- "category": one of "product" | "service" | "behavioral" | "facility" | "pricing" | "general"
+- "subcategory": short phrase (e.g. "cold food", "rude cashier") or null
+- "rating": integer 1-5 (1 = very negative, 5 = very positive)
 
-Return only valid JSON: { "summary": "...", "keyPoints": ["...", "..."] }`
+Return only valid JSON with all fields present.`
     : `You are a call summarizer. Given a conversation transcript between a visitor and ${agentLabel} (an AI agent for ${tenant.companyName}), return a JSON object with:
 - "summary": a 2-3 sentence narrative recap of the discussion
 - "keyPoints": an array of 3-5 concise bullet-point strings
@@ -130,6 +137,18 @@ Return only valid JSON: { "summary": "...", "keyPoints": ["...", "..."] }`
 
     const raw    = completion.choices[0].message.content ?? '{}'
     const parsed = JSON.parse(raw)
+
+    // Backfill any classification fields that the real-time [REVIEW:{...}] token
+    // missed. LLM fields are only used when the hook's reviewRef had null values.
+    if (isReviewAgent) {
+      review = {
+        sentiment:   review?.sentiment   ?? (parsed.sentiment   as ReviewData['sentiment']  ?? null),
+        category:    review?.category    ?? (parsed.category    as ReviewData['category']   ?? null),
+        subcategory: review?.subcategory ?? (parsed.subcategory as string  ?? null),
+        rating:      review?.rating      ?? (typeof parsed.rating === 'number' ? parsed.rating : null),
+        items:       review?.items       ?? null,
+      }
+    }
 
     summary = {
       summary:   parsed.summary   ?? fallbackSummary.summary,

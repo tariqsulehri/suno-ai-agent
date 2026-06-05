@@ -47,12 +47,13 @@ function AgentLoginForm() {
         if (!res.ok) throw new Error('shops api error')
         const data = await res.json() as ShopOption[]
         setShops(data)
-        // Auto-select first shop and pre-fill its demo credentials
         const first = data[0]
         if (first) {
           setShopId((prev) => prev || first.id)
-          if (first.agentUsername) setUsername((u) => u || first.agentUsername!)
-          if (first.agentPassword) setPassword((p) => p || first.agentPassword!)
+          // Always use the shop's agent credentials — stale localStorage values
+          // from a previous session would otherwise block the correct pre-fill.
+          if (first.agentUsername) setUsername(first.agentUsername)
+          if (first.agentPassword) setPassword(first.agentPassword)
         }
       })
       .catch(() => setError('Could not load shops. Please refresh.'))

@@ -613,14 +613,6 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
                     <strong>{isRecording ? recordingCountdown : formatClock(RECORDING_LIMIT_SECS)}</strong>
                     turn cap
                   </span>
-                  <span>
-                    <strong>{spokenTurns}</strong>
-                    turns
-                  </span>
-                  <span>
-                    <strong>{language.toUpperCase().slice(0, 2)}</strong>
-                    lang
-                  </span>
                 </div>
               </section>
 

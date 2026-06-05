@@ -50,7 +50,6 @@ const STATUS: Record<Phase, string> = {
 // ── Public interface ───────────────────────────────────────────────────────────
 interface Props { tenantId?: string; token?: string; shopCode?: string }
 
-const SESSION_LIMIT_SECS = 120
 const RECORDING_LIMIT_SECS = 60
 
 function formatClock(totalSecs: number): string {
@@ -121,7 +120,6 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
   const endCallRef     = useRef(endCall)
   const toggleMicRef   = useRef(toggleMic)
 
-  const [sessionSecs,          setSessionSecs]          = useState(0)
   const [recordSecs,           setRecordSecs]           = useState(0)
   const [endStep,              setEndStep]              = useState<'sending' | 'confirmed' | null>(null)
   const [resetSecs,            setResetSecs]            = useState(5)
@@ -167,34 +165,6 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
 
   // Session countdown — hard cap for the full interaction.
   // Resets only when phase returns to 'connecting' (new session).
-  // Auto-ends call when timer hits 0.
-  // NOTE: no cleanup return — removing it was intentional. The cleanup ran on every
-  // phase change (idle→listening, etc.), clearing the interval before sessionActiveRef
-  // could restart it, freezing the display. The interval is self-clearing at the limit.
-  const sessionActiveRef = useRef(false)
-  useEffect(() => {
-    const live = phase !== 'connecting' && phase !== 'ended'
-    if (live && !sessionActiveRef.current) {
-      sessionActiveRef.current = true
-      setSessionSecs(0)
-      timerRef.current = setInterval(() => {
-        setSessionSecs(s => {
-          if (s >= SESSION_LIMIT_SECS - 1) {
-            clearInterval(timerRef.current!)
-            timerRef.current = null
-            endCallRef.current()
-            return SESSION_LIMIT_SECS
-          }
-          return s + 1
-        })
-      }, 1000)
-    }
-    if (phase === 'connecting' || phase === 'ended') {
-      sessionActiveRef.current = false
-      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
-      if (phase === 'connecting') setSessionSecs(0)
-    }
-  }, [phase])
 
   // Per-turn recording cap — prevents unlimited speech, but submits the turn
   // to the agent instead of ending the whole call.
@@ -333,9 +303,7 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
   const ended = phase === 'ended'
   const busy  = phase === 'thinking' || phase === 'transcribing' || phase === 'connecting'
 
-  const sessionRemaining = SESSION_LIMIT_SECS - sessionSecs
   const recordingRemaining = RECORDING_LIMIT_SECS - recordSecs
-  const sessionCountdown = formatClock(sessionRemaining)
   const recordingCountdown = formatClock(recordingRemaining)
 
   // SVG progress arc — depletes as time is used
@@ -642,10 +610,6 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
                 </div>
                 <div className="nx-agent-metrics">
                   <span>
-                    <strong>{sessionCountdown}</strong>
-                    session
-                  </span>
-                  <span>
                     <strong>{isRecording ? recordingCountdown : formatClock(RECORDING_LIMIT_SECS)}</strong>
                     turn cap
                   </span>
@@ -757,7 +721,6 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
 
                 <div className="nx-end-policy">
                   <span className="nx-close-cue">Say thanks or goodbye to close</span>
-                  <span className="nx-session-cue">Auto-submit at {formatClock(SESSION_LIMIT_SECS)}</span>
                 </div>
 
               </div>
@@ -771,7 +734,7 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
                    : phase === 'transcribing' ? 'Processing…'
                    : phase === 'thinking'     ? 'Thinking…'
                    : phase === 'connecting'   ? 'Starting up…'
-                   : `Session ${sessionCountdown}`}
+                   : 'Live'}
                 </span>
               </div>
 

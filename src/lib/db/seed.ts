@@ -128,7 +128,19 @@ async function seed() {
     console.log(`  👤 Agent: ${a.username}  password: ${a.password}  → ${shop.name}`)
   }
 
-  console.log(`\n✅ Seeded ${shopRecords.length} shops, ${count} reviews, ${agentDefs.length} agents.\n`)
+  // Admin user
+  const adminHash = await hashPassword('admin1234')
+  await User.findOneAndUpdate(
+    { username: 'admin' },
+    {
+      $set:        { passwordHash: adminHash, role: 'admin', active: true, demoPassword: 'admin1234' },
+      $setOnInsert: { },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  )
+  console.log('  🔑 Admin:   admin  password: admin1234')
+
+  console.log(`\n✅ Seeded ${shopRecords.length} shops, ${count} reviews, ${agentDefs.length} agents, 1 admin.\n`)
   console.log('Agent login  → http://localhost:3000/agent-login')
   console.log('Dashboard    → http://localhost:3000/dashboard\n')
 }

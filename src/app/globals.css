@@ -1980,6 +1980,26 @@ html, body {
   min-width: 0;
 }
 
+.nx-shop-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.45rem;
+  padding: 0.28rem 0.7rem 0.28rem 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--nx-accent) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--nx-accent) 45%, transparent);
+  color: var(--nx-accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.nx-shop-badge svg {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
 .nx-agent-kicker {
   display: block;
   color: var(--nx-text-soft);

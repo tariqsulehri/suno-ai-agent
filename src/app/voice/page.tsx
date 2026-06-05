@@ -110,7 +110,7 @@ export default async function VoicePage({ searchParams }: VoicePageProps) {
 
       <main className="min-h-dvh bg-surface" data-va-theme={theme} style={mainStyle}>
         {mode === 'fullscreen' ? (
-          <NexusAgent tenantId={tenantId} token={token} shopCode={shopCode} />
+          <NexusAgent tenantId={tenantId} token={token} shopCode={shopCode} shopName={shop.name} />
         ) : (
           <VoiceAgentWidget tenantId={tenantId} token={token}
                             shopCode={shopCode}

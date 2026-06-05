@@ -48,7 +48,7 @@ const STATUS: Record<Phase, string> = {
 }
 
 // ── Public interface ───────────────────────────────────────────────────────────
-interface Props { tenantId?: string; token?: string; shopCode?: string }
+interface Props { tenantId?: string; token?: string; shopCode?: string; shopName?: string }
 
 const RECORDING_LIMIT_SECS = 60
 
@@ -89,7 +89,7 @@ export function NexusAgent(props: Props) {
 }
 
 // ── Inner component ────────────────────────────────────────────────────────────
-function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onReset: () => void }) {
+function NexusAgentInner({ tenantId, token, shopCode, shopName, onReset }: Props & { onReset: () => void }) {
   // Shop validation is handled server-side (resolveReviewShop in /api/summarize).
   // A missing shopCode is the only case where we block the UI.
   const validShop = Boolean(shopCode)
@@ -605,7 +605,14 @@ function NexusAgentInner({ tenantId, token, shopCode, onReset }: Props & { onRes
                   <div className="nx-agent-meta">
                     <span className="nx-agent-kicker">Experience Intelligence</span>
                     <h1>{agentName || 'Review Agent'}</h1>
-                    <p>{branchLabel} secure voice session</p>
+                    {shopName && (
+                      <span className="nx-shop-badge">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+                        </svg>
+                        {shopName}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="nx-agent-metrics">

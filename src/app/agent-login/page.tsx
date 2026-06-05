@@ -56,7 +56,7 @@ function AgentLoginForm() {
           if (first.agentPassword) setPassword(first.agentPassword)
         }
       })
-      .catch(() => setError('Could not load shops. Please refresh.'))
+      .catch(() => setError('Could not load shops — server may be unavailable. Please check your connection and refresh.'))
   }, [])
 
   async function handleSubmit(e: React.SyntheticEvent<HTMLFormElement>) {

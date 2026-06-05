@@ -45,7 +45,7 @@ const RATING_EMOJI: Record<number, string> = {
 const UNKNOWN_NAME  = 'Unknown'
 const UNKNOWN_EMAIL = 'unknown@email.com'
 function fmtContact(v: string | null | undefined): string | null {
-  if (!v || v === UNKNOWN_NAME || v === UNKNOWN_EMAIL) return null
+  if (!v || v === 'null' || v === UNKNOWN_NAME || v === UNKNOWN_EMAIL) return null
   return v
 }
 function fmtText(v: string | null | undefined, fallback = '—'): string {
@@ -709,7 +709,7 @@ function TranscriptModal({
                 />
               ) : (() => {
                 const dName  = fmtContact(lead.name)
-                const dPhone = lead.phone || null
+                const dPhone = fmtContact(lead.phone)
                 const dEmail = fmtContact(lead.email)
                 return (dName || dPhone || dEmail) ? (
                 <div className="space-y-2">
@@ -1143,7 +1143,7 @@ function ReviewsPanel({ reviews: initial }: { reviews: DashboardData['recentRevi
                 </p>
                 {(() => {
                   const n = fmtContact(r.leadName)
-                  const p = r.leadPhone || null
+                  const p = fmtContact(r.leadPhone)
                   return (n || p) ? (
                     <p className="text-xs text-slate-400 mt-1">
                       {n && `👤 ${n}`}{p && `${n ? ' · ' : ''}📞 ${p}`}

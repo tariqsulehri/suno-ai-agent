@@ -13,13 +13,15 @@ export default async function DashboardPage() {
     redirect('/dashboard/login')
   }
 
+  const sessionMeta = { role: session.role, shopId: session.shopId }
+
   try {
     const data = await getDashboardData({
       shopId: session.role === 'manager' ? session.shopId : null,
     })
-    return <DashboardClient data={data} />
+    return <DashboardClient data={data} session={sessionMeta} />
   } catch (err) {
     console.error('[dashboard page]', err)
-    return <DashboardClient data={null} />
+    return <DashboardClient data={null} session={sessionMeta} />
   }
 }

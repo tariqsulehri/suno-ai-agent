@@ -8,7 +8,9 @@ import {
   LineChart, Line, CartesianGrid,
 } from 'recharts'
 import type { DashboardData } from '@/lib/db/dashboard-query'
+import type { AppSession } from '@/lib/auth/session'
 import { PROVINCES, CITIES_BY_PROVINCE } from '@/data/pakistan-locations'
+import { ReportsTab } from '@/components/dashboard/reports/ReportsTab'
 
 // ── Emoji maps ─────────────────────────────────────────────────────────────────
 const SENTIMENT_EMOJI: Record<string, string> = {
@@ -1291,9 +1293,9 @@ function EmptyState() {
 }
 
 // ── Main Dashboard ─────────────────────────────────────────────────────────────
-export function DashboardClient({ data }: { data: DashboardData | null }) {
+export function DashboardClient({ data, session }: { data: DashboardData | null; session: Pick<AppSession, 'role' | 'shopId'> }) {
   const router = useRouter()
-  const [tab, setTab] = useState<'analytics' | 'reviews' | 'shops'>('analytics')
+  const [tab, setTab] = useState<'analytics' | 'reviews' | 'shops' | 'reports'>('analytics')
   const [themeKey, setThemeKey] = useState<DashboardThemeKey>('light')
 
   useEffect(() => {
@@ -1400,6 +1402,9 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
             </button>
             <button onClick={() => setTab('shops')} className={tabBtn(tab === 'shops')} style={tab === 'shops' ? { background: theme.accentDark } : undefined}>
               Shops
+            </button>
+            <button onClick={() => setTab('reports')} className={tabBtn(tab === 'reports')} style={tab === 'reports' ? { background: theme.accentDark } : undefined}>
+              Reports
             </button>
           </div>
 
@@ -1665,6 +1670,13 @@ export function DashboardClient({ data }: { data: DashboardData | null }) {
       )}
 
       {tab === 'shops' && <ShopsPanel />}
+
+      {tab === 'reports' && (
+        <ReportsTab
+          shops={shops.map((s) => ({ id: s.id, name: s.name, city: s.city ?? null }))}
+          isAdmin={session.role === 'admin'}
+        />
+      )}
       </div>
     </div>
   )
